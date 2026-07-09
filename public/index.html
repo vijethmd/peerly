@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Peerly - Video calls that just work</title>
+  <meta name="description" content="Free peer-to-peer video calling with screen sharing, chat and more. No account needed.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f6ef7'/%3E%3Cpath d='M7 11a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3h-8a3 3 0 0 1-3-3V11zm14 3.5 4.2-2.8a1 1 0 0 1 1.55.83v7.94a1 1 0 0 1-1.55.83L21 18.5v-4z' fill='white'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="landing-body">
+  <header class="landing-header">
+    <a class="brand" href="/">
+      <svg class="brand-mark" viewBox="0 0 32 32" width="28" height="28" aria-hidden="true">
+        <rect width="32" height="32" rx="8" fill="#4f6ef7"/>
+        <path d="M7 11a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3h-8a3 3 0 0 1-3-3V11zm14 3.5 4.2-2.8a1 1 0 0 1 1.55.83v7.94a1 1 0 0 1-1.55.83L21 18.5v-4z" fill="#fff"/>
+      </svg>
+      <span>Peerly</span>
+    </a>
+  </header>
+
+  <main class="landing-main">
+    <section class="hero">
+      <h1>Video calls that<br><span class="accent">just work.</span></h1>
+      <p class="hero-sub">
+        Free, private, peer-to-peer video meetings in your browser.
+        No account, no installs, no time limits. Create a room and share the link.
+      </p>
+
+      <div class="landing-actions">
+        <button id="newMeetingBtn" class="btn btn-primary btn-lg">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/>
+          </svg>
+          New meeting
+        </button>
+        <form id="joinForm" class="join-form" autocomplete="off">
+          <input id="joinInput" type="text" placeholder="Enter a code or link" aria-label="Meeting code or link" spellcheck="false">
+          <button type="submit" class="btn btn-ghost" id="joinBtn" disabled>Join</button>
+        </form>
+      </div>
+
+      <p id="landingError" class="landing-error" hidden></p>
+
+      <div id="recentRooms" class="recent-rooms" hidden>
+        <h2>Recent meetings</h2>
+        <ul id="recentList"></ul>
+      </div>
+    </section>
+
+    <section class="features">
+      <div class="feature-card">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg>
+        <h3>Screen sharing</h3>
+        <p>Present a tab, window or your whole screen with one click.</p>
+      </div>
+      <div class="feature-card">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <h3>In-call chat</h3>
+        <p>Share links and notes without interrupting the speaker.</p>
+      </div>
+      <div class="feature-card">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <h3>Private by design</h3>
+        <p>Media flows directly between participants, encrypted end to end by WebRTC.</p>
+      </div>
+      <div class="feature-card">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+        <h3>No time limits</h3>
+        <p>Talk as long as you like, with up to 8 people per room.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="landing-footer">
+    <p>Built with WebRTC and Socket.IO</p>
+  </footer>
+
+  <script src="/js/landing.js"></script>
+</body>
+</html>
