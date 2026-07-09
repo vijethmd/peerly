@@ -318,6 +318,13 @@
   function connect() {
     socket = io();
 
+    socket.on('connect_error', () => {
+      if (!joined) {
+        joinError.textContent = 'Could not connect to the meeting server. Retrying...';
+        joinError.hidden = false;
+      }
+    });
+
     socket.on('connect', () => {
       socket.emit('join', { roomId, name: selfName, micOn, camOn }, (res) => {
         if (res.error) {
@@ -470,14 +477,15 @@
     };
 
     pc.ontrack = (e) => {
-      const stream = e.streams[0];
-      if (!stream) return;
-      peer.stream = stream;
+      // Don't rely on e.streams: tracks attached remotely via replaceTrack
+      // carry no stream id, so collect them into our own per-peer stream.
+      if (!peer.stream) peer.stream = new MediaStream();
+      if (!peer.stream.getTracks().includes(e.track)) peer.stream.addTrack(e.track);
       const video = document.querySelector(`#tile-${CSS.escape(info.id)} video`);
-      if (video && video.srcObject !== stream) {
-        video.srcObject = stream;
+      if (video && video.srcObject !== peer.stream) {
+        video.srcObject = peer.stream;
       }
-      if (e.track.kind === 'audio') watchStreamAudio(info.id, stream);
+      if (e.track.kind === 'audio') watchStreamAudio(info.id, peer.stream);
     };
 
     pc.onconnectionstatechange = () => {
@@ -532,6 +540,10 @@
       t.direction = 'sendrecv';
       if (kind === 'audio' && audioTrack) t.sender.replaceTrack(audioTrack).catch(() => {});
       if (kind === 'video' && videoTrack) t.sender.replaceTrack(videoTrack).catch(() => {});
+      // Associate a stream id so the offerer's ontrack gets e.streams too.
+      if (localStream && typeof t.sender.setStreams === 'function') {
+        try { t.sender.setStreams(localStream); } catch { /* optional */ }
+      }
     });
   }
 
@@ -627,8 +639,9 @@
     tile.classList.toggle('cam-off', !showVideo);
     tile.classList.toggle('mirrored', isSelf && !sharing);
 
+    // SVG elements have no `hidden` IDL property, so toggle display directly.
     const micIcon = tile.querySelector('.mic-off-icon');
-    if (micIcon) micIcon.hidden = state.micOn;
+    if (micIcon) micIcon.style.display = state.micOn ? 'none' : '';
 
     const hand = tile.querySelector('.tile-hand');
     if (hand) hand.hidden = !state.handRaised;

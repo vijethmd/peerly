@@ -18,6 +18,10 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* The hidden attribute must always win, even over class display rules.
+   Safari/older browsers don't apply the UA's !important [hidden] rule. */
+[hidden] { display: none !important; }
+
 html, body { height: 100%; }
 
 body {
