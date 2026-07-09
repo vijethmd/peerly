@@ -7,14 +7,17 @@ const { Server } = require('socket.io');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  maxHttpBufferSize: 64 * 1024
+  maxHttpBufferSize: 64 * 1024,
+  // Detect dropped connections quickly so host failover is fast.
+  pingInterval: 10000,
+  pingTimeout: 5000
 });
 
 const PORT = process.env.PORT || 4800;
 const MAX_ROOM_SIZE = parseInt(process.env.MAX_ROOM_SIZE || '8', 10);
 
-// rooms: Map<roomId, Map<socketId, participant>>
-// participant: { name, micOn, camOn, handRaised, sharing, joinedAt }
+// rooms: Map<roomId, { participants: Map<socketId, participant>, hostId }>
+// participant: { name, micOn, camOn, handRaised, sharing, canShare, joinedAt }
 const rooms = new Map();
 
 app.use(express.static(path.join(__dirname, 'public')));
@@ -48,7 +51,7 @@ app.get('/api/room/:id', (req, res) => {
     return res.status(400).json({ valid: false });
   }
   const room = rooms.get(roomId);
-  const count = room ? room.size : 0;
+  const count = room ? room.participants.size : 0;
   res.json({ valid: true, count, full: count >= MAX_ROOM_SIZE, max: MAX_ROOM_SIZE });
 });
 
@@ -79,14 +82,29 @@ app.get('/room/:id', (req, res) => {
 function participantsOf(roomId) {
   const room = rooms.get(roomId);
   if (!room) return [];
-  return Array.from(room.entries()).map(([id, p]) => ({
+  return Array.from(room.participants.entries()).map(([id, p]) => ({
     id,
     name: p.name,
     micOn: p.micOn,
     camOn: p.camOn,
     handRaised: p.handRaised,
-    sharing: p.sharing
+    sharing: p.sharing,
+    canShare: p.canShare
   }));
+}
+
+function broadcastPeerState(roomId, id) {
+  const room = rooms.get(roomId);
+  const p = room && room.participants.get(id);
+  if (!p) return;
+  io.to(roomId).emit('peer-state', {
+    id,
+    micOn: p.micOn,
+    camOn: p.camOn,
+    handRaised: p.handRaised,
+    sharing: p.sharing,
+    canShare: p.canShare
+  });
 }
 
 io.on('connection', (socket) => {
@@ -103,11 +121,12 @@ io.on('connection', (socket) => {
       return ack({ error: 'Already in a room.' });
     }
     let room = rooms.get(roomId);
-    if (room && room.size >= MAX_ROOM_SIZE) {
+    if (room && room.participants.size >= MAX_ROOM_SIZE) {
       return ack({ error: `This room is full (max ${MAX_ROOM_SIZE} participants).` });
     }
     if (!room) {
-      room = new Map();
+      // First person in becomes the host.
+      room = { participants: new Map(), hostId: socket.id };
       rooms.set(roomId, room);
     }
     const participant = {
@@ -116,21 +135,23 @@ io.on('connection', (socket) => {
       camOn: !!(payload && payload.camOn),
       handRaised: false,
       sharing: false,
+      canShare: false,
       joinedAt: Date.now()
     };
-    room.set(socket.id, participant);
+    room.participants.set(socket.id, participant);
     joinedRoomId = roomId;
     socket.join(roomId);
 
     const peers = participantsOf(roomId).filter((p) => p.id !== socket.id);
-    ack({ selfId: socket.id, peers });
+    ack({ selfId: socket.id, peers, hostId: room.hostId });
     socket.to(roomId).emit('peer-joined', {
       id: socket.id,
       name: participant.name,
       micOn: participant.micOn,
       camOn: participant.camOn,
       handRaised: false,
-      sharing: false
+      sharing: false,
+      canShare: false
     });
   });
 
@@ -138,7 +159,7 @@ io.on('connection', (socket) => {
   socket.on('signal', ({ to, data } = {}) => {
     if (!joinedRoomId || typeof to !== 'string' || !data) return;
     const room = rooms.get(joinedRoomId);
-    if (!room || !room.has(to)) return;
+    if (!room || !room.participants.has(to)) return;
     io.to(to).emit('signal', { from: socket.id, data });
   });
 
@@ -147,7 +168,7 @@ io.on('connection', (socket) => {
     const trimmed = text.trim().slice(0, 2000);
     if (!trimmed) return;
     const room = rooms.get(joinedRoomId);
-    const p = room && room.get(socket.id);
+    const p = room && room.participants.get(socket.id);
     if (!p) return;
     io.to(joinedRoomId).emit('chat', {
       from: socket.id,
@@ -160,7 +181,7 @@ io.on('connection', (socket) => {
   socket.on('state', (state = {}) => {
     if (!joinedRoomId) return;
     const room = rooms.get(joinedRoomId);
-    const p = room && room.get(socket.id);
+    const p = room && room.participants.get(socket.id);
     if (!p) return;
     if (typeof state.micOn === 'boolean') p.micOn = state.micOn;
     if (typeof state.camOn === 'boolean') p.camOn = state.camOn;
@@ -171,8 +192,47 @@ io.on('connection', (socket) => {
       micOn: p.micOn,
       camOn: p.camOn,
       handRaised: p.handRaised,
-      sharing: p.sharing
+      sharing: p.sharing,
+      canShare: p.canShare
     });
+  });
+
+  // A participant asks the host for permission to share their screen.
+  socket.on('share-request', () => {
+    if (!joinedRoomId) return;
+    const room = rooms.get(joinedRoomId);
+    const p = room && room.participants.get(socket.id);
+    if (!p) return;
+    if (p.canShare || room.hostId === socket.id) {
+      // Already allowed - just confirm.
+      p.canShare = true;
+      socket.emit('share-permission', { allowed: true });
+      return;
+    }
+    if (!room.participants.has(room.hostId)) return;
+    io.to(room.hostId).emit('share-request', { id: socket.id, name: p.name });
+  });
+
+  // Host grants or revokes screen-share permission for a participant.
+  socket.on('set-share-permission', ({ id, allowed } = {}) => {
+    if (!joinedRoomId) return;
+    const room = rooms.get(joinedRoomId);
+    if (!room || room.hostId !== socket.id) return;
+    const target = room.participants.get(id);
+    if (!target || typeof allowed !== 'boolean') return;
+    target.canShare = allowed;
+    io.to(id).emit('share-permission', { allowed });
+    broadcastPeerState(joinedRoomId, id);
+  });
+
+  // Host hands the host role to another participant.
+  socket.on('transfer-host', ({ id } = {}) => {
+    if (!joinedRoomId) return;
+    const room = rooms.get(joinedRoomId);
+    if (!room || room.hostId !== socket.id) return;
+    if (!room.participants.has(id)) return;
+    room.hostId = id;
+    io.to(joinedRoomId).emit('host-changed', { hostId: id });
   });
 
   function leaveRoom() {
@@ -181,11 +241,26 @@ io.on('connection', (socket) => {
     joinedRoomId = null;
     const room = rooms.get(roomId);
     if (room) {
-      room.delete(socket.id);
-      if (room.size === 0) {
+      const wasHost = room.hostId === socket.id;
+      room.participants.delete(socket.id);
+      if (room.participants.size === 0) {
         rooms.delete(roomId);
       } else {
         socket.to(roomId).emit('peer-left', { id: socket.id });
+        if (wasHost) {
+          // Promote the longest-present participant (covers host leaving
+          // on purpose and host dropping from a dead connection alike).
+          let nextId = null;
+          let earliest = Infinity;
+          room.participants.forEach((p, id) => {
+            if (p.joinedAt < earliest) {
+              earliest = p.joinedAt;
+              nextId = id;
+            }
+          });
+          room.hostId = nextId;
+          io.to(roomId).emit('host-changed', { hostId: nextId });
+        }
       }
     }
     socket.leave(roomId);

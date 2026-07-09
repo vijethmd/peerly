@@ -72,6 +72,11 @@
   let camOn = true;
   let handRaised = false;
   let sharing = false;
+  let hostId = null;
+  let selfCanShare = false;
+  let focusedId = null;
+  let focusAuto = false;
+  let filmstrip = null;
 
   let iceConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
@@ -95,6 +100,28 @@
     el.textContent = msg;
     toasts.appendChild(el);
     setTimeout(() => el.remove(), 4000);
+  }
+
+  // Toast with action buttons (host approval prompts). Sticks around
+  // for 30s or until a button is clicked.
+  function actionToast(msg, actions) {
+    const el = document.createElement('div');
+    el.className = 'toast toast-action';
+    const span = document.createElement('span');
+    span.textContent = msg;
+    el.appendChild(span);
+    actions.forEach((a) => {
+      const b = document.createElement('button');
+      b.className = 'toast-btn' + (a.primary ? ' toast-btn-primary' : '');
+      b.textContent = a.label;
+      b.addEventListener('click', () => {
+        a.onClick();
+        el.remove();
+      });
+      el.appendChild(b);
+    });
+    toasts.appendChild(el);
+    setTimeout(() => el.remove(), 30000);
   }
 
   function initials(name) {
@@ -336,6 +363,7 @@
           return;
         }
         selfId = res.selfId;
+        hostId = res.hostId;
         if (!joined) {
           enterCall();
         } else {
@@ -383,13 +411,50 @@
       }
     });
 
-    socket.on('peer-state', ({ id, micOn, camOn, handRaised, sharing }) => {
+    socket.on('peer-state', ({ id, micOn, camOn, handRaised, sharing, canShare }) => {
       const peer = peers.get(id);
       if (!peer) return;
       const wasRaised = peer.handRaised;
-      Object.assign(peer, { micOn, camOn, handRaised, sharing });
+      const wasSharing = peer.sharing;
+      Object.assign(peer, { micOn, camOn, handRaised, sharing, canShare });
       if (handRaised && !wasRaised) toast(`${peer.name} raised a hand`);
+      // Auto-focus whoever starts presenting; drop back when they stop.
+      if (sharing && !wasSharing && !focusedId) focusTile(id, true);
+      if (!sharing && wasSharing && focusedId === id && focusAuto) unfocusTile();
       updateTileState(id);
+      renderPeople();
+    });
+
+    socket.on('host-changed', ({ hostId: newHostId }) => {
+      hostId = newHostId;
+      if (newHostId === selfId) {
+        toast('You are now the host');
+      } else {
+        const p = peers.get(newHostId);
+        if (p) toast(`${p.name} is now the host`);
+      }
+      if (selfId) updateTileState(selfId);
+      peers.forEach((_, id) => updateTileState(id));
+      renderPeople();
+    });
+
+    socket.on('share-request', ({ id, name }) => {
+      actionToast(`${name} wants to share their screen`, [
+        { label: 'Allow', primary: true, onClick: () => socket.emit('set-share-permission', { id, allowed: true }) },
+        { label: 'Deny', onClick: () => socket.emit('set-share-permission', { id, allowed: false }) }
+      ]);
+    });
+
+    socket.on('share-permission', ({ allowed }) => {
+      selfCanShare = allowed;
+      if (allowed) {
+        toast('The host allowed you to present. Click Share to start.');
+      } else if (sharing) {
+        stopShare();
+        toast('The host stopped your screen share', true);
+      } else {
+        toast('The host declined your request to share', true);
+      }
       renderPeople();
     });
 
@@ -465,6 +530,7 @@
       camOn: info.camOn,
       handRaised: !!info.handRaised,
       sharing: !!info.sharing,
+      canShare: !!info.canShare,
       stream: null,
       pendingCandidates: []
     };
@@ -570,6 +636,7 @@
     try { peer.pc.close(); } catch { /* already closed */ }
     peers.delete(id);
     stopWatchingAudio(id);
+    if (focusedId === id) unfocusTile();
     const tile = $(`tile-${id}`);
     if (tile) tile.remove();
     layoutGrid();
@@ -622,7 +689,15 @@
     nameTag.appendChild(nameSpan);
     tile.appendChild(nameTag);
 
-    videoGrid.appendChild(tile);
+    tile.title = 'Click to focus this tile';
+    tile.addEventListener('click', () => {
+      const tid = tile.id.slice(5);
+      if (focusedId === tid) unfocusTile();
+      else focusTile(tid);
+    });
+
+    if (focusedId && filmstrip) filmstrip.appendChild(tile);
+    else videoGrid.appendChild(tile);
     layoutGrid();
   }
 
@@ -649,13 +724,49 @@
     const nameSpan = tile.querySelector('.tile-name span');
     if (nameSpan) {
       const suffix = isSelf ? ' (you)' : '';
+      const hostMark = id === hostId ? ' - host' : '';
       const presenting = state.sharing ? ' - presenting' : '';
-      nameSpan.textContent = `${state.name}${suffix}${presenting}`;
+      nameSpan.textContent = `${state.name}${suffix}${hostMark}${presenting}`;
     }
+  }
+
+  // ---- focus / spotlight view ----
+  function focusTile(id, auto = false) {
+    const tile = $(`tile-${id}`);
+    if (!tile) return;
+    if (!filmstrip) {
+      filmstrip = document.createElement('div');
+      filmstrip.className = 'filmstrip';
+    }
+    const prevFocused = videoGrid.querySelector('.tile.focused');
+    if (prevFocused) prevFocused.classList.remove('focused');
+    focusedId = id;
+    focusAuto = auto;
+    videoGrid.classList.add('focus-mode');
+    document.querySelectorAll('.tile').forEach((t) => {
+      if (t === tile) videoGrid.prepend(t);
+      else filmstrip.appendChild(t);
+    });
+    tile.classList.add('focused');
+    videoGrid.appendChild(filmstrip);
+  }
+
+  function unfocusTile() {
+    focusedId = null;
+    focusAuto = false;
+    videoGrid.classList.remove('focus-mode');
+    const focused = videoGrid.querySelector('.tile.focused');
+    if (focused) focused.classList.remove('focused');
+    if (filmstrip) {
+      Array.from(filmstrip.children).forEach((t) => videoGrid.appendChild(t));
+      filmstrip.remove();
+    }
+    layoutGrid();
   }
 
   // Compute the largest 16:9 tile size that fits all tiles in the grid.
   function layoutGrid() {
+    if (focusedId) return; // focus layout is handled purely by CSS
     const n = videoGrid.children.length;
     if (n === 0) return;
     const W = videoGrid.clientWidth;
@@ -827,7 +938,12 @@
     toast('Screen sharing stopped');
   }
 
-  shareBtn.addEventListener('click', () => (sharing ? stopShare() : startShare()));
+  shareBtn.addEventListener('click', () => {
+    if (sharing) return stopShare();
+    if (selfId === hostId || selfCanShare) return startShare();
+    socket.emit('share-request');
+    toast('Asked the host for permission to share');
+  });
 
   // --- recording (records the screen/tab you pick, mixed with your microphone) ---
   async function startRecording() {
@@ -1004,10 +1120,10 @@
   function renderPeople() {
     const entries = [];
     if (joined) {
-      entries.push({ id: selfId, name: selfName, micOn, camOn, handRaised, sharing, isSelf: true });
+      entries.push({ id: selfId, name: selfName, micOn, camOn, handRaised, sharing, canShare: selfCanShare, isSelf: true });
     }
     peers.forEach((p, id) => {
-      entries.push({ id, name: p.name, micOn: p.micOn, camOn: p.camOn, handRaised: p.handRaised, sharing: p.sharing, isSelf: false });
+      entries.push({ id, name: p.name, micOn: p.micOn, camOn: p.camOn, handRaised: p.handRaised, sharing: p.sharing, canShare: p.canShare, isSelf: false });
     });
 
     peopleCount.textContent = `(${entries.length})`;
@@ -1021,14 +1137,44 @@
       avatar.className = 'avatar';
       avatar.textContent = initials(p.name);
 
+      const mid = document.createElement('div');
+      mid.className = 'people-mid';
+
       const name = document.createElement('div');
       name.className = 'people-name';
       name.textContent = p.name;
-      if (p.isSelf) {
-        const you = document.createElement('span');
-        you.className = 'you';
-        you.textContent = ' (you)';
-        name.appendChild(you);
+      const tags = [];
+      if (p.isSelf) tags.push('you');
+      if (p.id === hostId) tags.push('host');
+      if (tags.length) {
+        const tag = document.createElement('span');
+        tag.className = 'you';
+        tag.textContent = ` (${tags.join(', ')})`;
+        name.appendChild(tag);
+      }
+      mid.appendChild(name);
+
+      // Host-only controls: grant/revoke presenting, hand over the host role.
+      if (selfId === hostId && !p.isSelf) {
+        const actions = document.createElement('div');
+        actions.className = 'people-actions';
+
+        const shareToggle = document.createElement('button');
+        shareToggle.className = 'mini-btn' + (p.canShare ? ' mini-btn-on' : '');
+        shareToggle.textContent = p.canShare ? 'Revoke share' : 'Allow share';
+        shareToggle.addEventListener('click', () => {
+          socket.emit('set-share-permission', { id: p.id, allowed: !p.canShare });
+        });
+
+        const makeHost = document.createElement('button');
+        makeHost.className = 'mini-btn';
+        makeHost.textContent = 'Make host';
+        makeHost.addEventListener('click', () => {
+          socket.emit('transfer-host', { id: p.id });
+        });
+
+        actions.append(shareToggle, makeHost);
+        mid.appendChild(actions);
       }
 
       const flags = document.createElement('div');
@@ -1038,7 +1184,7 @@
         <span class="flag-sharing" ${p.sharing ? '' : 'hidden'} title="Presenting">${ICONS.share}</span>
         <span class="flag-mic-off" ${p.micOn ? 'hidden' : ''} title="Muted">${ICONS.micOffSmall}</span>`;
 
-      li.append(avatar, name, flags);
+      li.append(avatar, mid, flags);
       peopleList.appendChild(li);
     });
   }
@@ -1070,7 +1216,10 @@
       case 'c': togglePanel(chatPanel); break;
       case 'p': togglePanel(peoplePanel); break;
       case '?': shortcutsOverlay.hidden = false; break;
-      case 'escape': shortcutsOverlay.hidden = true; break;
+      case 'escape':
+        if (!shortcutsOverlay.hidden) shortcutsOverlay.hidden = true;
+        else if (focusedId) unfocusTile();
+        break;
     }
   });
   shortcutsClose.addEventListener('click', () => { shortcutsOverlay.hidden = true; });

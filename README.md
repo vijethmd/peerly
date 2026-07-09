@@ -15,6 +15,9 @@ Built with Node.js, Express, Socket.IO (signaling) and WebRTC (media). Media str
 - Participants panel with mute / hand-raise / presenting indicators
 - Raise hand with notification toasts
 - Active-speaker highlight (WebAudio level analysis)
+- Focus view: click any tile to spotlight it (others collapse into a filmstrip); auto-focuses whoever starts presenting; Esc or click again to return to grid
+- Host role: the first person in a room is the host; participants must ask the host for screen-share permission (Allow/Deny prompt), and the host can grant/revoke sharing or hand over the host role from the participants panel
+- Automatic host failover: if the host leaves or their connection dies, the longest-present participant is promoted within seconds
 - Local meeting recording (screen picker + your mic, saved as `.webm`)
 - Auto-fitting video grid (largest 16:9 tiles that fit, like Meet)
 - Keyboard shortcuts: M mic, V camera, H hand, C chat, P people, ? help

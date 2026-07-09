@@ -484,6 +484,39 @@ input, select { font-family: inherit; }
 }
 .tile-hand[hidden] { display: none; }
 
+.tile { cursor: pointer; }
+
+/* ---------- Focus / spotlight view ---------- */
+
+.video-grid.focus-mode {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: center;
+}
+.focus-mode > .tile.focused {
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: none;
+  aspect-ratio: auto;
+  min-height: 0;
+}
+.focus-mode > .tile.focused video { object-fit: contain; }
+
+.filmstrip {
+  flex: none;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  max-width: 100%;
+  scrollbar-width: thin;
+}
+.filmstrip:empty { display: none; }
+.filmstrip .tile { width: 180px; flex: none; }
+.filmstrip .tile .avatar { width: 44px; height: 44px; font-size: 17px; }
+.filmstrip .tile .tile-name { padding: 3px 7px; font-size: 10.5px; left: 6px; bottom: 6px; }
+.filmstrip .tile .tile-hand span { display: none; }
+
 .tile-conn {
   position: absolute;
   top: 10px;
@@ -642,7 +675,21 @@ input, select { font-family: inherit; }
 }
 .people-list li:hover { background: var(--bg-overlay); }
 .people-list .avatar { width: 36px; height: 36px; font-size: 15px; flex: none; }
-.people-name { flex: 1; min-width: 0; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.people-mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.people-name { min-width: 0; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.people-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.mini-btn {
+  background: var(--bg-overlay);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 9px;
+  border-radius: 6px;
+  transition: color 0.15s, border-color 0.15s;
+}
+.mini-btn:hover { color: var(--text); border-color: var(--accent); }
+.mini-btn-on { color: var(--ok); border-color: var(--ok); }
 .people-name .you { color: var(--text-dim); font-size: 12px; }
 .people-flags { display: flex; gap: 8px; align-items: center; color: var(--text-dim); }
 .people-flags .flag-hand { color: var(--warn); }
@@ -711,6 +758,26 @@ input, select { font-family: inherit; }
   max-width: 90vw;
 }
 .toast.toast-error { border-color: var(--danger); }
+
+.toast-action {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.toast-btn {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  transition: border-color 0.15s, background 0.15s;
+}
+.toast-btn:hover { border-color: var(--accent); }
+.toast-btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.toast-btn-primary:hover { background: var(--accent-hover); }
 @keyframes toast-in {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
