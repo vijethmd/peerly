@@ -124,9 +124,15 @@ io.on('connection', (socket) => {
     if (room && room.participants.size >= MAX_ROOM_SIZE) {
       return ack({ error: `This room is full (max ${MAX_ROOM_SIZE} participants).` });
     }
+    if (room && room.locked) {
+      return ack({ error: 'This meeting is locked by the host.' });
+    }
+    if (room && room.removed && room.removed.has(payload && payload.clientId)) {
+      return ack({ error: 'You were removed from this meeting by the host.' });
+    }
     if (!room) {
       // First person in becomes the host.
-      room = { participants: new Map(), hostId: socket.id };
+      room = { participants: new Map(), hostId: socket.id, locked: false, removed: new Set() };
       rooms.set(roomId, room);
     }
     const participant = {
@@ -136,6 +142,8 @@ io.on('connection', (socket) => {
       handRaised: false,
       sharing: false,
       canShare: false,
+      // Stable per-browser id so a removed user can't just rejoin.
+      clientId: (payload && typeof payload.clientId === 'string') ? payload.clientId.slice(0, 64) : null,
       joinedAt: Date.now()
     };
     room.participants.set(socket.id, participant);
@@ -143,7 +151,7 @@ io.on('connection', (socket) => {
     socket.join(roomId);
 
     const peers = participantsOf(roomId).filter((p) => p.id !== socket.id);
-    ack({ selfId: socket.id, peers, hostId: room.hostId });
+    ack({ selfId: socket.id, peers, hostId: room.hostId, locked: room.locked });
     socket.to(roomId).emit('peer-joined', {
       id: socket.id,
       name: participant.name,
@@ -159,7 +167,7 @@ io.on('connection', (socket) => {
   socket.on('signal', ({ to, data } = {}) => {
     if (!joinedRoomId || typeof to !== 'string' || !data) return;
     const room = rooms.get(joinedRoomId);
-    if (!room || !room.participants.has(to)) return;
+    if (!room || !room.participants.has(socket.id) || !room.participants.has(to)) return;
     io.to(to).emit('signal', { from: socket.id, data });
   });
 
@@ -244,6 +252,34 @@ io.on('connection', (socket) => {
     if (!room.participants.has(id)) return;
     room.hostId = id;
     io.to(joinedRoomId).emit('host-changed', { hostId: id });
+  });
+
+  // Host moderation: mute one/all, remove a participant, lock the room.
+  socket.on('host-action', ({ action, id } = {}) => {
+    if (!joinedRoomId) return;
+    const room = rooms.get(joinedRoomId);
+    if (!room || room.hostId !== socket.id) return;
+
+    if (action === 'mute') {
+      if (room.participants.has(id) && id !== socket.id) io.to(id).emit('force-mute');
+    } else if (action === 'mute-all') {
+      room.participants.forEach((p, pid) => {
+        if (pid !== socket.id) io.to(pid).emit('force-mute');
+      });
+    } else if (action === 'remove') {
+      const target = room.participants.get(id);
+      if (target && id !== socket.id) {
+        if (target.clientId) room.removed.add(target.clientId);
+        room.participants.delete(id);
+        io.to(id).emit('removed');
+        io.to(joinedRoomId).emit('peer-left', { id });
+        const s = io.sockets.sockets.get(id);
+        if (s) s.leave(joinedRoomId);
+      }
+    } else if (action === 'lock' || action === 'unlock') {
+      room.locked = action === 'lock';
+      io.to(joinedRoomId).emit('room-locked', { locked: room.locked });
+    }
   });
 
   function leaveRoom() {

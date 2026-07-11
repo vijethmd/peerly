@@ -43,6 +43,9 @@
   const peopleBadge = $('peopleBadge');
   const peopleList = $('peopleList');
   const peopleCount = $('peopleCount');
+  const peopleHostBar = $('peopleHostBar');
+  const muteAllBtn = $('muteAllBtn');
+  const lockRoomBtn = $('lockRoomBtn');
   const toasts = $('toasts');
   const shortcutsOverlay = $('shortcutsOverlay');
   const shortcutsClose = $('shortcutsClose');
@@ -92,6 +95,15 @@
 
   let timerInterval = null;
   let unreadChats = 0;
+  let pendingShareRequest = false;
+  let roomLocked = false;
+
+  // Stable per-browser id so a host-removed user can't just rejoin.
+  let clientId = localStorage.getItem('peerly-client-id');
+  if (!clientId) {
+    clientId = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now());
+    localStorage.setItem('peerly-client-id', clientId);
+  }
 
   // ---------- Helpers ----------
   function toast(msg, isError = false) {
@@ -370,7 +382,7 @@
     });
 
     socket.on('connect', () => {
-      socket.emit('join', { roomId, name: selfName, micOn, camOn }, (res) => {
+      socket.emit('join', { roomId, name: selfName, micOn, camOn, clientId }, (res) => {
         if (res.error) {
           joinError.textContent = res.error;
           joinError.hidden = false;
@@ -381,6 +393,7 @@
         }
         selfId = res.selfId;
         hostId = res.hostId;
+        roomLocked = !!res.locked;
         if (!joined) {
           enterCall();
         } else {
@@ -475,15 +488,47 @@
     });
 
     socket.on('share-permission', ({ allowed }) => {
+      const wasPending = pendingShareRequest;
+      pendingShareRequest = false;
       selfCanShare = allowed;
       if (allowed) {
-        toast('The host allowed you to present. Click Share to start.');
+        // Browsers require a fresh user gesture for getDisplayMedia, so we
+        // can't silently auto-start. Offer a one-click button instead.
+        if (wasPending) {
+          actionToast('The host approved your request to present.', [
+            { label: 'Share screen', primary: true, onClick: () => startShare() }
+          ]);
+        } else {
+          toast('The host allowed you to present. Click Share to start.');
+        }
       } else if (sharing) {
         stopShare();
         toast('The host stopped your screen share', true);
-      } else {
+      } else if (wasPending) {
         toast('The host declined your request to share', true);
+      } else {
+        toast('The host revoked your screen-share permission', true);
       }
+      renderPeople();
+    });
+
+    // Host forced us to mute.
+    socket.on('force-mute', () => {
+      if (micOn && localStream && localStream.getAudioTracks().length > 0) {
+        toggleMic();
+        toast('You were muted by the host');
+      }
+    });
+
+    // Host removed us from the meeting.
+    socket.on('removed', () => {
+      intentionalLeave = true;
+      cleanupAndLeave('/?removed=1');
+    });
+
+    socket.on('room-locked', ({ locked }) => {
+      roomLocked = locked;
+      toast(locked ? 'The host locked the meeting - no new participants can join' : 'The host unlocked the meeting');
       renderPeople();
     });
 
@@ -1102,6 +1147,7 @@
   shareBtn.addEventListener('click', () => {
     if (sharing) return stopShare();
     if (selfId === hostId || selfCanShare) return startShare();
+    pendingShareRequest = true;
     socket.emit('share-request');
     toast('Asked the host for permission to share');
   });
@@ -1178,8 +1224,7 @@
   });
 
   // --- leave ---
-  function leave() {
-    intentionalLeave = true;
+  function cleanupAndLeave(dest) {
     stopRecording();
     stopShare();
     if (socket) {
@@ -1188,7 +1233,12 @@
     }
     Array.from(peers.keys()).forEach((id) => removePeer(id));
     stopStream(localStream);
-    location.href = '/?left=1';
+    location.href = dest;
+  }
+
+  function leave() {
+    intentionalLeave = true;
+    cleanupAndLeave('/?left=1');
   }
   leaveBtn.addEventListener('click', leave);
   window.addEventListener('beforeunload', () => {
@@ -1222,6 +1272,16 @@
     }
     layoutGrid();
   }
+
+  muteAllBtn.addEventListener('click', () => {
+    if (selfId !== hostId) return;
+    socket.emit('host-action', { action: 'mute-all' });
+    toast('Muted everyone');
+  });
+  lockRoomBtn.addEventListener('click', () => {
+    if (selfId !== hostId) return;
+    socket.emit('host-action', { action: roomLocked ? 'unlock' : 'lock' });
+  });
 
   chatBtn.addEventListener('click', () => togglePanel(chatPanel));
   peopleBtn.addEventListener('click', () => togglePanel(peoplePanel));
@@ -1289,6 +1349,14 @@
 
     peopleCount.textContent = `(${entries.length})`;
     peopleBadge.textContent = String(entries.length);
+
+    const iAmHost = selfId === hostId;
+    peopleHostBar.hidden = !iAmHost;
+    if (iAmHost) {
+      lockRoomBtn.textContent = roomLocked ? 'Unlock meeting' : 'Lock meeting';
+      lockRoomBtn.classList.toggle('hostbar-btn-on', roomLocked);
+    }
+
     peopleList.innerHTML = '';
 
     entries.forEach((p) => {
@@ -1315,10 +1383,16 @@
       }
       mid.appendChild(name);
 
-      // Host-only controls: grant/revoke presenting, hand over the host role.
+      // Host-only controls: mute, presenting permission, hand over host, remove.
       if (selfId === hostId && !p.isSelf) {
         const actions = document.createElement('div');
         actions.className = 'people-actions';
+
+        const muteBtn = document.createElement('button');
+        muteBtn.className = 'mini-btn';
+        muteBtn.textContent = 'Mute';
+        muteBtn.disabled = !p.micOn;
+        muteBtn.addEventListener('click', () => socket.emit('host-action', { action: 'mute', id: p.id }));
 
         const shareToggle = document.createElement('button');
         shareToggle.className = 'mini-btn' + (p.canShare ? ' mini-btn-on' : '');
@@ -1330,11 +1404,19 @@
         const makeHost = document.createElement('button');
         makeHost.className = 'mini-btn';
         makeHost.textContent = 'Make host';
-        makeHost.addEventListener('click', () => {
-          socket.emit('transfer-host', { id: p.id });
+        makeHost.addEventListener('click', () => socket.emit('transfer-host', { id: p.id }));
+
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'mini-btn mini-btn-danger';
+        removeBtn.textContent = 'Remove';
+        removeBtn.addEventListener('click', () => {
+          actionToast(`Remove ${p.name} from the meeting?`, [
+            { label: 'Remove', primary: true, onClick: () => socket.emit('host-action', { action: 'remove', id: p.id }) },
+            { label: 'Cancel', onClick: () => {} }
+          ]);
         });
 
-        actions.append(shareToggle, makeHost);
+        actions.append(muteBtn, shareToggle, makeHost, removeBtn);
         mid.appendChild(actions);
       }
 

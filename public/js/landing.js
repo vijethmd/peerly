@@ -17,6 +17,8 @@
   const params = new URLSearchParams(location.search);
   if (params.get('error') === 'invalid-room') {
     showError('That meeting link is not valid. Check the code and try again.');
+  } else if (params.get('removed') === '1') {
+    showError('You were removed from the meeting by the host.');
   } else if (params.get('left') === '1') {
     showError('You left the meeting.');
     landingError.style.color = 'var(--text-dim)';
