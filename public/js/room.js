@@ -197,26 +197,43 @@
     if (stream) stream.getTracks().forEach((t) => t.stop());
   }
 
+  // Hint encoders about content: camera video is motion (drop resolution
+  // before framerate under load); mic audio is speech (Opus DTX/tuning).
+  function tagTracks(stream) {
+    if (!stream) return stream;
+    stream.getVideoTracks().forEach((t) => { try { t.contentHint = 'motion'; } catch { /* optional */ } });
+    stream.getAudioTracks().forEach((t) => { try { t.contentHint = 'speech'; } catch { /* optional */ } });
+    return stream;
+  }
+
   async function acquireMedia(audioDeviceId, videoDeviceId) {
-    const audio = audioDeviceId ? { deviceId: { exact: audioDeviceId } } : true;
-    const video = videoDeviceId
-      ? { deviceId: { exact: videoDeviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
-      : { width: { ideal: 1280 }, height: { ideal: 720 } };
+    const audio = {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true
+    };
+    if (audioDeviceId) audio.deviceId = { exact: audioDeviceId };
+    const video = {
+      width: { ideal: 1280 },
+      height: { ideal: 720 },
+      frameRate: { ideal: 30 }
+    };
+    if (videoDeviceId) video.deviceId = { exact: videoDeviceId };
     try {
-      return await navigator.mediaDevices.getUserMedia({ audio, video });
+      return tagTracks(await navigator.mediaDevices.getUserMedia({ audio, video }));
     } catch (err) {
       // Retry audio-only, then video-only, then give up.
       try {
         const s = await navigator.mediaDevices.getUserMedia({ audio });
         mediaWarning.hidden = false;
         mediaWarning.textContent = 'Camera unavailable - joining with microphone only. You can still see and hear others.';
-        return s;
+        return tagTracks(s);
       } catch {
         try {
           const s = await navigator.mediaDevices.getUserMedia({ video });
           mediaWarning.hidden = false;
           mediaWarning.textContent = 'Microphone unavailable - others will not hear you.';
-          return s;
+          return tagTracks(s);
         } catch {
           mediaWarning.hidden = false;
           mediaWarning.textContent = 'No camera or microphone access. You can still join to watch and use chat. Check browser permissions to enable devices.';
@@ -405,6 +422,9 @@
           } else {
             peer.pendingCandidates.push(data.candidate);
           }
+        } else if (data.restart) {
+          // The answerer asked us (the initiator) to renegotiate ICE.
+          if (peer.initiator) restartOffer(from, pc);
         }
       } catch (err) {
         console.error('signal error', err);
@@ -423,6 +443,15 @@
       if (!sharing && wasSharing && focusedId === id && focusAuto) unfocusTile();
       updateTileState(id);
       renderPeople();
+    });
+
+    // A viewer reported how large our video is on their screen. Store it
+    // and rescale our outgoing encoding to that one peer.
+    socket.on('view-state', ({ from, view }) => {
+      const peer = peers.get(from);
+      if (!peer) return;
+      peer.remoteView = view;
+      applySenderQuality(from);
     });
 
     socket.on('host-changed', ({ hostId: newHostId }) => {
@@ -532,7 +561,12 @@
       sharing: !!info.sharing,
       canShare: !!info.canShare,
       stream: null,
-      pendingCandidates: []
+      pendingCandidates: [],
+      initiator,              // we own renegotiation for this pair
+      remoteView: 'normal',   // how this peer says they display OUR video
+      lastFrames: 0,
+      frozenSince: 0,
+      lastIceRestart: 0
     };
     peers.set(info.id, peer);
     addTile(info.id, info.name, false);
@@ -560,6 +594,10 @@
       switch (pc.connectionState) {
         case 'connected':
           label.hidden = true;
+          // Now that senders exist, apply this viewer's quality tier and
+          // tell them how prominently we're showing their video.
+          applySenderQuality(info.id);
+          sendViewState(info.id);
           break;
         case 'connecting':
           label.hidden = false;
@@ -568,11 +606,12 @@
         case 'disconnected':
           label.hidden = false;
           label.textContent = 'Reconnecting...';
+          maybeRestartIce(info.id);
           break;
         case 'failed':
           label.hidden = false;
-          label.textContent = 'Connection failed';
-          pc.restartIce();
+          label.textContent = 'Reconnecting...';
+          maybeRestartIce(info.id, true);
           break;
       }
     };
@@ -629,6 +668,117 @@
     }
     peer.pendingCandidates = [];
   }
+
+  // ---- adaptive per-viewer quality ----
+  // Each mesh connection carries its own copy of our video, so we can cap
+  // bitrate/resolution differently per peer based on how big our tile is
+  // for them. Camera and screen use different ceilings.
+  const QUALITY = {
+    camera: {
+      focused: { maxBitrate: 2500000, scaleResolutionDownBy: 1, maxFramerate: 30 },
+      normal: { maxBitrate: 900000, scaleResolutionDownBy: 1, maxFramerate: 30 },
+      thumb: { maxBitrate: 120000, scaleResolutionDownBy: 4, maxFramerate: 15 }
+    },
+    screen: {
+      focused: { maxBitrate: 3000000, scaleResolutionDownBy: 1, maxFramerate: 30 },
+      normal: { maxBitrate: 1200000, scaleResolutionDownBy: 1, maxFramerate: 15 },
+      thumb: { maxBitrate: 400000, scaleResolutionDownBy: 2, maxFramerate: 10 }
+    }
+  };
+
+  async function applySenderQuality(peerId) {
+    const peer = peers.get(peerId);
+    if (!peer) return;
+    const sender = peer.pc.getSenders().find((s) => s.track && s.track.kind === 'video');
+    if (!sender) return;
+    const tier = (sharing ? QUALITY.screen : QUALITY.camera)[peer.remoteView] || QUALITY.camera.normal;
+    try {
+      const params = sender.getParameters();
+      if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
+      Object.assign(params.encodings[0], tier);
+      // Prefer keeping motion smooth for camera, resolution for screen text.
+      params.degradationPreference = sharing ? 'maintain-resolution' : 'maintain-framerate';
+      await sender.setParameters(params);
+    } catch { /* browser may reject mid-negotiation; retried on next trigger */ }
+  }
+
+  function applyAllSenderQuality() {
+    peers.forEach((_, id) => applySenderQuality(id));
+  }
+
+  // ---- view-state: tell each sender how prominently we show them ----
+  function viewOf(peerId) {
+    if (focusedId === peerId) return 'focused';
+    if (focusedId) return 'thumb';   // someone else is focused; this is a filmstrip thumb
+    return 'normal';
+  }
+
+  function sendViewState(peerId) {
+    if (socket && joined) socket.emit('view-state', { to: peerId, view: viewOf(peerId) });
+  }
+
+  function broadcastViewStates() {
+    peers.forEach((_, id) => sendViewState(id));
+  }
+
+  // ---- ICE restart (throttled, initiator-driven) ----
+  async function restartOffer(id, pc) {
+    try {
+      const offer = await pc.createOffer({ iceRestart: true });
+      await pc.setLocalDescription(offer);
+      socket.emit('signal', { to: id, data: pc.localDescription.toJSON() });
+    } catch (err) {
+      console.error('ice restart offer failed', err);
+    }
+  }
+
+  function maybeRestartIce(id, force = false) {
+    const peer = peers.get(id);
+    if (!peer) return;
+    const now = Date.now();
+    if (!force && now - peer.lastIceRestart < 5000) return;
+    peer.lastIceRestart = now;
+    if (peer.initiator) restartOffer(id, peer.pc);
+    else if (socket) socket.emit('signal', { to: id, data: { restart: true } }); // ask the initiator
+  }
+
+  // ---- frozen-frame watchdog ----
+  // A connection can report "connected" while inbound video has stalled
+  // (packet loss, a Wi-Fi blip). Poll decode progress; if frames stop
+  // advancing for a peer who should be sending video, nudge ICE and show
+  // a hint on their tile.
+  async function pollPeerHealth(id, peer) {
+    if (peer.pc.connectionState !== 'connected') return;
+    const expectsVideo = peer.camOn || peer.sharing;
+    let stats;
+    try { stats = await peer.pc.getStats(); } catch { return; }
+    let framesDecoded = null;
+    stats.forEach((r) => {
+      if (r.type === 'inbound-rtp' && r.kind === 'video') framesDecoded = r.framesDecoded ?? framesDecoded;
+    });
+    const label = document.querySelector(`#tile-${CSS.escape(id)} .tile-conn`);
+    if (framesDecoded == null) return;
+    const advanced = framesDecoded > peer.lastFrames;
+    peer.lastFrames = framesDecoded;
+    if (!expectsVideo) { peer.frozenSince = 0; return; }
+    if (advanced) {
+      peer.frozenSince = 0;
+      if (label && label.textContent === 'Video stalled...') label.hidden = true;
+    } else {
+      if (!peer.frozenSince) peer.frozenSince = Date.now();
+      const stalledMs = Date.now() - peer.frozenSince;
+      if (stalledMs > 3000 && label) {
+        label.hidden = false;
+        label.textContent = 'Video stalled...';
+      }
+      if (stalledMs > 6000) maybeRestartIce(id);
+    }
+  }
+
+  setInterval(() => {
+    if (!joined) return;
+    peers.forEach((peer, id) => pollPeerHealth(id, peer));
+  }, 2000);
 
   function removePeer(id) {
     const peer = peers.get(id);
@@ -749,6 +899,8 @@
     });
     tile.classList.add('focused');
     videoGrid.appendChild(filmstrip);
+    // Ask each sender for the resolution this new layout warrants.
+    broadcastViewStates();
   }
 
   function unfocusTile() {
@@ -762,6 +914,7 @@
       filmstrip.remove();
     }
     layoutGrid();
+    broadcastViewStates();
   }
 
   // Compute the largest 16:9 tile size that fits all tiles in the grid.
@@ -898,7 +1051,11 @@
     let stream;
     try {
       stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: { ideal: 15 } },
+        video: {
+          frameRate: { ideal: 30 },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        },
         audio: false
       });
     } catch {
@@ -906,10 +1063,13 @@
     }
     screenStream = stream;
     const screenTrack = screenStream.getVideoTracks()[0];
+    // 'detail' keeps text/slides crisp at the cost of framerate under load.
+    try { screenTrack.contentHint = 'detail'; } catch { /* optional */ }
     sharing = true;
     shareBtn.classList.add('active');
 
     eachVideoSender((sender) => sender.replaceTrack(screenTrack).catch(() => {}));
+    applyAllSenderQuality(); // screen uses the higher-bitrate tier
 
     const selfVideo = document.querySelector(`#tile-${CSS.escape(selfId)} video`);
     if (selfVideo) selfVideo.srcObject = screenStream;
@@ -929,6 +1089,7 @@
 
     const cameraTrack = localStream ? localStream.getVideoTracks()[0] || null : null;
     eachVideoSender((sender) => sender.replaceTrack(cameraTrack).catch(() => {}));
+    applyAllSenderQuality(); // back to the camera tier
 
     const selfVideo = document.querySelector(`#tile-${CSS.escape(selfId)} video`);
     if (selfVideo) selfVideo.srcObject = localStream;

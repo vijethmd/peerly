@@ -225,6 +225,17 @@ io.on('connection', (socket) => {
     broadcastPeerState(joinedRoomId, id);
   });
 
+  // A viewer tells a sender how prominently they are displayed (focused
+  // tile, normal grid cell, or filmstrip thumbnail) so the sender can
+  // scale its outgoing video for that specific connection.
+  socket.on('view-state', ({ to, view } = {}) => {
+    if (!joinedRoomId || typeof to !== 'string') return;
+    if (!['focused', 'normal', 'thumb'].includes(view)) return;
+    const room = rooms.get(joinedRoomId);
+    if (!room || !room.participants.has(to)) return;
+    io.to(to).emit('view-state', { from: socket.id, view });
+  });
+
   // Host hands the host role to another participant.
   socket.on('transfer-host', ({ id } = {}) => {
     if (!joinedRoomId) return;

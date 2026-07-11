@@ -18,6 +18,10 @@ Built with Node.js, Express, Socket.IO (signaling) and WebRTC (media). Media str
 - Focus view: click any tile to spotlight it (others collapse into a filmstrip); auto-focuses whoever starts presenting; Esc or click again to return to grid
 - Host role: the first person in a room is the host; participants must ask the host for screen-share permission (Allow/Deny prompt), and the host can grant/revoke sharing or hand over the host role from the participants panel
 - Automatic host failover: if the host leaves or their connection dies, the longest-present participant is promoted within seconds
+- Adaptive per-viewer video quality: because each mesh link carries its own copy of your video, the sender scales bitrate and resolution independently for every viewer based on how large your tile is on their screen (focused ~2.5 Mbps full-res, grid ~900 kbps, filmstrip thumbnail ~120 kbps at quarter resolution) - big savings in bandwidth and CPU
+- Encoder content hints: camera video is tagged `motion` (drop resolution before framerate under load) and screen shares `detail` (keep text crisp); mics use `speech` plus echo cancellation, noise suppression and auto gain
+- High-quality screen sharing: captures up to 1080p30 with a higher bitrate ceiling and resolution-preserving degradation
+- Frozen-frame recovery: a stats watchdog detects stalled inbound video and triggers a throttled ICE restart, with a "Video stalled..." hint on the affected tile
 - Local meeting recording (screen picker + your mic, saved as `.webm`)
 - Auto-fitting video grid (largest 16:9 tiles that fit, like Meet)
 - Keyboard shortcuts: M mic, V camera, H hand, C chat, P people, ? help
