@@ -42,7 +42,9 @@ export class Lobby {
 
   init() {
     $('#lobbyRoomId').textContent = this.roomId;
-    this.nameInput.value = getName();
+    // The field is usable before this script finishes loading on a slow
+    // connection; keep anything already typed.
+    if (!this.nameInput.value.trim()) this.nameInput.value = getName();
     this.updateAvatar();
 
     this.nameInput.addEventListener('input', () => {
