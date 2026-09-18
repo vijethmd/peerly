@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <defs>
+    <linearGradient id="ssky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#20204a"/><stop offset="42%" stop-color="#8a4a77"/><stop offset="72%" stop-color="#e2765b"/><stop offset="100%" stop-color="#f7b267"/>
+    </linearGradient>
+    <filter id="sunGlow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="40"/></filter>
+  </defs>
+  <rect width="1280" height="720" fill="url(#ssky)"/>
+  <circle cx="640" cy="470" r="110" fill="#ffd79a" opacity=".55" filter="url(#sunGlow)"/>
+  <circle cx="640" cy="470" r="72" fill="#ffe2b0"/>
+  <g fill="#ffffff" opacity=".18">
+    <ellipse cx="300" cy="200" rx="150" ry="22"/><ellipse cx="980" cy="150" rx="180" ry="20"/><ellipse cx="700" cy="270" rx="120" ry="16"/>
+  </g>
+  <path d="M-40 560c220-70 340 30 540-10s360-100 560-40h260v250H-40z" fill="#6b3a63" opacity=".85"/>
+  <path d="M-40 620c260-60 380 40 620 10s380-80 700-30v150H-40z" fill="#3f2545"/>
+  <rect y="690" width="1280" height="30" fill="#2a1830"/>
+</svg>

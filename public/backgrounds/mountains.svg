@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <defs>
+    <linearGradient id="msky" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#1d2a4a"/><stop offset="55%" stop-color="#4b6a94"/><stop offset="100%" stop-color="#9fb6ce"/></linearGradient>
+    <linearGradient id="far" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#5d7595"/><stop offset="100%" stop-color="#43587a"/></linearGradient>
+    <linearGradient id="near" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#33455f"/><stop offset="100%" stop-color="#22304a"/></linearGradient>
+  </defs>
+  <rect width="1280" height="720" fill="url(#msky)"/>
+  <circle cx="1030" cy="160" r="54" fill="#f6e6c8" opacity=".85"/>
+  <path d="M-40 520l280-250 180 160 130-110 240 200 200-140 310 240v100H-40z" fill="url(#far)"/>
+  <path d="M240 270l78 70-54 26-24-24-30 20-48-40z" fill="#eaf1f8" opacity=".92"/>
+  <path d="M790 320l70 58-48 22-22-20-26 16z" fill="#eaf1f8" opacity=".9"/>
+  <path d="M-40 640l300-190 190 130 210-150 250 180 370-160v370H-40z" fill="url(#near)"/>
+  <rect y="600" width="1280" height="120" fill="#17233a"/>
+</svg>

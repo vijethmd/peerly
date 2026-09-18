@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <defs>
+    <linearGradient id="fog" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#cfe0da"/><stop offset="55%" stop-color="#9db4ad"/><stop offset="100%" stop-color="#6e8a85"/></linearGradient>
+    <filter id="mist" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="9"/></filter>
+  </defs>
+  <rect width="1280" height="720" fill="url(#fog)"/>
+  <g fill="#41615c" opacity=".35" filter="url(#mist)">
+    <path d="M90 520l60-190 60 190zM250 540l70-230 70 230zM430 515l55-175 55 175zM610 545l72-240 72 240zM800 520l58-190 58 190zM960 550l75-250 75 250zM1150 520l55-180 55 180z"/>
+  </g>
+  <g fill="#2f4a47" opacity=".6">
+    <path d="M10 600l70-250 70 250zM200 620l80-280 80 280zM420 600l66-230 66 230zM640 630l82-290 82 290zM860 605l70-245 70 245zM1080 625l78-275 78 275z"/>
+  </g>
+  <g fill="#1f3533">
+    <path d="M-40 700l90-320 90 320zM160 720l100-350 100 350zM420 700l84-300 84 300zM680 720l96-340 96 340zM940 705l88-310 88 310zM1180 715l90-320 90 320z"/>
+  </g>
+  <rect width="1280" height="720" fill="#dbe8e4" opacity=".14"/>
+</svg>

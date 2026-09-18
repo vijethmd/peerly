@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="38%" r="72%">
+      <stop offset="0%" stop-color="#3c4763"/><stop offset="55%" stop-color="#252c3d"/><stop offset="100%" stop-color="#151a26"/>
+    </radialGradient>
+    <filter id="bokeh" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="26"/></filter>
+  </defs>
+  <rect width="1280" height="720" fill="url(#glow)"/>
+  <g filter="url(#bokeh)" fill="#8ea2ff">
+    <circle cx="180" cy="180" r="70" opacity=".16"/><circle cx="1090" cy="150" r="92" opacity=".14"/>
+    <circle cx="980" cy="470" r="64" opacity=".12"/><circle cx="260" cy="520" r="84" opacity=".1"/>
+    <circle cx="640" cy="120" r="50" opacity=".1"/>
+  </g>
+  <ellipse cx="640" cy="690" rx="560" ry="120" fill="#0d111b" opacity=".55" filter="url(#bokeh)"/>
+</svg>
