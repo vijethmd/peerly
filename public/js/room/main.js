@@ -766,6 +766,10 @@ effectsDialog.init();
 settingsDialog.init();
 lobby.init();
 
+// Everything below is wired up; let people join even while the camera
+// and microphone are still starting.
+document.body.dataset.ready = 'true';
+
 const stored = loadSession(roomId);
 const autoRejoin = Boolean(stored?.inCall && stored.name && Date.now() - (stored.savedAt || 0) < 90000);
 
