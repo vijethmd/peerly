@@ -1,34 +1,40 @@
 # Peerly
 
-Free, private, peer-to-peer video calling in the browser. No accounts, no installs, no time limits. Create a room, share the link, talk.
+Free, private, peer-to-peer video meetings in the browser. No accounts, no installs, no time limits. Create a room, share the link, talk.
 
-Built with Node.js, Express, Socket.IO (signaling) and WebRTC (media). Media streams flow directly between participants in a full mesh - the server only relays signaling messages and chat, never audio or video.
+Media goes directly between participants over WebRTC (end-to-end encrypted by DTLS-SRTP). The Node.js server only coordinates: it relays connection setup, chat and meeting state, and never sees audio or video.
 
 ## Features
 
-- Instant meeting rooms with shareable links (`/room/abc-defg-hij`)
-- Pre-join lobby: camera preview, mic/camera toggles, device pickers, live occupancy
-- Up to 8 participants per room (configurable via `MAX_ROOM_SIZE`)
-- Mute / camera toggle, with state visible to everyone
-- Screen sharing (via `replaceTrack`, no renegotiation needed)
-- In-call text chat with URL linkification and unread badge
-- Participants panel with mute / hand-raise / presenting indicators
-- Raise hand with notification toasts
-- Active-speaker highlight (WebAudio level analysis)
-- Focus view: click any tile to spotlight it (others collapse into a filmstrip); auto-focuses whoever starts presenting; Esc or click again to return to grid
-- Host role and moderation: the first person in a room is the host. From the participants panel the host can mute a participant, mute everyone, grant/revoke screen-share permission, hand over the host role, remove a participant (removed users are blocked from rejoining by a per-browser id), and lock the meeting so no new participants can join. Non-hosts request screen-share permission and, once approved, get a one-click "Share screen" prompt (needed because browsers require a fresh gesture to start screen capture).
-- Automatic host failover: if the host leaves or their connection dies, the longest-present participant is promoted within seconds
-- Adaptive per-viewer video quality: because each mesh link carries its own copy of your video, the sender scales bitrate and resolution independently for every viewer based on how large your tile is on their screen (focused ~2.5 Mbps full-res, grid ~900 kbps, filmstrip thumbnail ~120 kbps at quarter resolution) - big savings in bandwidth and CPU
-- Encoder content hints: camera video is tagged `motion` (drop resolution before framerate under load) and screen shares `detail` (keep text crisp); mics use `speech` plus echo cancellation, noise suppression and auto gain
-- High-quality screen sharing: captures up to 1080p30 with a higher bitrate ceiling and resolution-preserving degradation
-- Frozen-frame recovery: a stats watchdog detects stalled inbound video and triggers a throttled ICE restart, with a "Video stalled..." hint on the affected tile
-- Local meeting recording (screen picker + your mic, saved as `.webm`)
-- Auto-fitting video grid (largest 16:9 tiles that fit, like Meet)
-- Keyboard shortcuts: M mic, V camera, H hand, C chat, P people, ? help
-- Call timer, copy-link button, join/leave toasts
-- Graceful fallbacks: no camera, no mic, or no devices at all still lets you join
-- Automatic reconnect and mesh rebuild if the socket drops
-- Responsive layout for mobile
+**In the call**
+- Meeting rooms with shareable links (`/room/abc-defg-hij`) and a pre-join lobby: camera preview, mic level meter, device and speaker pickers
+- Up to 8 people per meeting (`MAX_ROOM_SIZE`), in an auto-fitting grid or a spotlight view (pin anyone; presentations spotlight themselves)
+- Screen sharing with the presenter’s camera still visible, including tab audio where the browser supports it
+- **Background blur and virtual backgrounds**: two blur strengths, six built-in backgrounds, or upload your own. Segmentation runs on your device (MediaPipe), and the background stays blurred while the model loads so it’s never briefly exposed
+- **Reactions** with floating animations, a flash on the sender’s tile, and a celebration burst when several people react together
+- **Private messages**: message everyone or one person; incoming private messages notify you with a Reply shortcut
+- Raise hand (with queue order), active-speaker highlight, “you’re muted” reminder, connection quality indicators, and a “video paused” hint when a stream stalls
+- Local recording (saved to your downloads; everyone sees a REC badge)
+- Keyboard shortcuts (`?` lists them), data saver mode, screen wake lock, and a layout that works on phones
+
+**Captions, transcript and AI notes**
+- The host turns on the transcript, and everyone gets **live captions** with speaker names. Each person’s browser transcribes their own microphone (Chrome and Edge use their built-in speech service), so attribution is exact and Peerly’s server only receives text
+- **Catch me up**: an AI recap of the meeting so far, for late joiners or anyone who stepped away
+- **Meeting notes page** when the meeting ends: an AI summary, key points, decisions, action items with owners and due dates, open questions, a topic timeline, who spoke and for how long, the timeline, the full searchable transcript and the public chat. Download it as Markdown or print it. Private messages are never included
+- AI features use Claude (`claude-opus-5` with structured output). Without an API key everything else, including the transcript and notes page, still works
+
+**Host controls**
+- Ask-to-join waiting room (admit or deny, or open the meeting to let everyone in)
+- Mute someone or everyone, turn off someone’s camera, lower hands, remove people (they can’t rejoin from that browser)
+- Approve who can present, turn private messages off, hand over the host role, end the meeting for everyone
+- If the host drops, the longest-present participant takes over
+
+**Reliability**
+- **Brief network drops don’t end the call.** Peer connections stay up while the signaling connection reconnects; everyone else just sees “Reconnecting…” on your tile
+- **Reloading the page puts you straight back** in the same seat
+- **Server restarts and deploys don’t drop calls.** Media keeps flowing peer-to-peer while the server is down; clients reconnect, prove who they are with signed tokens, and the meeting is rebuilt, with the real host getting the role back (needs `SESSION_SECRET`)
+- ICE restarts with backoff, automatic connection rebuilds, a frozen-video watchdog, and per-viewer adaptive bitrate (thumbnails get a fraction of the bandwidth of a spotlighted tile)
+- Falls back to the default device when a microphone or camera is unplugged
 
 ## Run locally
 
@@ -37,66 +43,120 @@ npm install
 npm start          # http://localhost:4800
 ```
 
-Note: browsers only allow camera/mic on `localhost` or HTTPS. To test a real call locally, open the room link in two browser windows (or one normal + one incognito).
+To try AI notes locally, start it with a key: `ANTHROPIC_API_KEY=sk-ant-... npm start`.
 
-## Deploy to Render
+Browsers only allow camera and mic on `localhost` or HTTPS. To test a call on one computer, open the room link in a normal window and a private window.
 
-The repo includes `render.yaml`, so you can use either path:
-
-**Blueprint (recommended)**
-1. Push this repo to GitHub.
-2. In the [Render dashboard](https://dashboard.render.com): New > Blueprint, pick the repo, click Apply.
-
-**Manual**
-1. New > Web Service, pick the repo.
-2. Runtime: Node. Build command: `npm install`. Start command: `node server.js`. Plan: Free.
-
-Render gives you HTTPS automatically, which WebRTC requires. WebSockets work out of the box.
-
-Free-tier note: the service sleeps after ~15 minutes idle; the first visit after that takes ~30-60s to wake. Media is peer-to-peer, so the dyno does almost no work during calls.
-
-## TURN server (recommended for production)
-
-STUN (Google's free servers, configured by default) gets most peers connected. Peers behind strict/symmetric NATs or corporate firewalls additionally need a TURN relay. Without one, roughly 10-20% of peer pairs may fail to connect.
-
-Free option: [metered.ca](https://www.metered.ca/tools/openrelay/) gives 50 GB/month of TURN relay. Create an account, then set these environment variables on Render (Dashboard > your service > Environment):
-
-```
-TURN_URL=turn:standard.relay.metered.ca:80,turn:standard.relay.metered.ca:443,turns:standard.relay.metered.ca:443?transport=tcp
-TURN_USERNAME=<your username>
-TURN_CREDENTIAL=<your credential>
+```bash
+npm test           # unit + integration tests (node:test)
+npm run lint       # ESLint
+npm run dev        # restart on file changes
 ```
 
-The server exposes these to clients via `/api/ice-config`; no code changes needed.
+## Deploy
+
+### Render
+
+`render.yaml` describes the service. Create it with **New > Blueprint** and pick this repository, or create a **Web Service** manually with build command `npm ci --omit=dev` and start command `node server.js`. Pushes to `main` deploy automatically.
+
+Then set these in the service’s **Environment** tab:
+
+| Variable | Why |
+|---|---|
+| `ANTHROPIC_API_KEY` | Turns on AI meeting notes and “catch me up” |
+| `SESSION_SECRET` | Any random string of 32+ characters (for example `openssl rand -hex 32`). Lets calls survive deploys. The blueprint generates it for you |
+
+The free plan sleeps after about 15 minutes idle, so the first visit afterwards takes 30 to 60 seconds. Meeting state and notes live in memory, so they are lost if the instance restarts; calls reconnect on their own, but unfinished transcripts don’t survive.
+
+### Docker
+
+```bash
+docker build -t peerly .
+docker run -p 4800:4800 -e SESSION_SECRET=$(openssl rand -hex 32) -e ANTHROPIC_API_KEY=... peerly
+```
+
+Put it behind HTTPS (browsers require it for camera and mic), and set `TRUST_PROXY` to the number of proxies in front of it.
+
+## TURN server
+
+Google’s public STUN servers connect most people. Participants behind strict firewalls or symmetric NATs also need a TURN relay; without one, roughly 10 to 20% of pairs may fail to connect.
+
+- **coturn** (recommended): run it with `use-auth-secret` and set `TURN_URL` and `TURN_SECRET`. Peerly then hands each participant short-lived credentials, so no long-lived TURN password ever reaches a browser
+- **A hosted relay** such as [metered.ca](https://www.metered.ca/tools/openrelay/): set `TURN_URL`, `TURN_USERNAME` and `TURN_CREDENTIAL`
+
+`TURN_URL` takes a comma-separated list, for example `turn:turn.example.com:3478,turns:turn.example.com:5349?transport=tcp`.
 
 ## Configuration
 
-| Env var | Default | Purpose |
+All settings are environment variables; `.env.example` lists them. Invalid values stop the server at startup with a clear message.
+
+| Variable | Default | Purpose |
 |---|---|---|
-| `PORT` | `4800` | HTTP port (Render sets this automatically) |
-| `MAX_ROOM_SIZE` | `8` | Max participants per room |
-| `TURN_URL` | unset | Comma-separated TURN URLs |
-| `TURN_USERNAME` | unset | TURN username |
-| `TURN_CREDENTIAL` | unset | TURN credential |
+| `PORT` | `4800` | HTTP port (Render sets it) |
+| `SESSION_SECRET` | random per process | Signs resume tokens so calls survive restarts |
+| `ANTHROPIC_API_KEY` | unset | Enables AI notes and recaps |
+| `AI_MODEL` | `claude-opus-5` | Claude model |
+| `AI_EFFORT` | `medium` | `low`, `medium`, `high`, `xhigh` or `max` |
+| `AI_MAX_REQUESTS_PER_HOUR` | `60` | Server-wide AI spend cap |
+| `MAX_ROOM_SIZE` | `8` | People per meeting (2 to 16) |
+| `RECONNECT_GRACE_MS` | `30000` | How long a dropped participant keeps their seat |
+| `REPORT_TTL_HOURS` | `24` | How long meeting notes stay available |
+| `TURN_URL`, `TURN_SECRET`, `TURN_USERNAME`, `TURN_CREDENTIAL` | unset | TURN relay (see above) |
+| `FORCE_RELAY` | `false` | Send all media through TURN (hides participants’ IP addresses from each other) |
+| `METRICS_TOKEN` | unset | Enables Prometheus metrics at `/metrics` behind `Authorization: Bearer <token>` |
+| `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`; logs are JSON lines in production |
+| `TRUST_PROXY` | `1` (`true` on Render) | Proxy hops to trust for client IPs |
+| `ALLOWED_ORIGINS` | same origin | Extra origins allowed to open WebSocket connections |
 
 ## Architecture
 
 ```
-Browser A ──┐                  ┌── Browser B
-            │   Socket.IO      │
-            ├── (signaling) ───┤      offers / answers / ICE,
-            │   Node server    │      chat, presence, state
-            └──────────────────┘
-Browser A ═══ WebRTC media (DTLS-SRTP, peer-to-peer) ═══ Browser B
+Browser A ──┐                           ┌── Browser B
+            │  Socket.IO (signaling)    │     offers/answers/ICE, chat,
+            ├─── Node.js server ────────┤     state, captions (text)
+            └──────────┬────────────────┘
+                       │ transcript + public chat, when the meeting ends
+                       ▼
+                  Claude API ──▶ meeting notes page
+
+Browser A ═══ WebRTC audio/video (DTLS-SRTP, peer-to-peer) ═══ Browser B
 ```
 
-- Full-mesh topology: every participant has one `RTCPeerConnection` per other participant. Mesh cost grows O(n^2), which is why rooms cap at 8 - beyond that you want an SFU (mediasoup, LiveKit, Jitsi).
-- The newcomer always initiates the offer to each existing peer, so there is exactly one negotiation per pair and no glare.
-- Screen share and camera swaps use `RTCRtpSender.replaceTrack()`, avoiding renegotiation entirely.
-- Server state is a single in-memory `Map` - no database. Rooms vanish when the last person leaves.
+- **Mesh topology.** Every participant has one `RTCPeerConnection` per other participant, with a fixed transceiver plan (mic, camera, screen video, screen audio), so turning video off, switching cameras, applying effects or presenting is `replaceTrack()` with no renegotiation. Mesh cost grows O(n²), which is why meetings cap at 8; beyond that you want an SFU (mediasoup, LiveKit)
+- **Negotiation** follows the W3C “perfect negotiation” pattern. Each connection has a session id, so a reloaded page or a rebuilt connection cleanly replaces the old one, and simultaneous rebuilds converge on one
+- **Identity.** The server issues each participant an id and an HMAC-signed resume token (plus a signed host proof for the host). Tokens are stateless, which is what lets a freshly restarted server recognise people
+- **Server state** is in memory: rooms, the waiting room, chat history, transcripts and reports. Rooms disappear when the last person leaves
+- **Security.** Strict Content Security Policy (no inline scripts, WASM only for the segmentation model), HSTS, Permissions-Policy, WebSocket origin checks, per-IP and per-event rate limits, input sanitisation (including bidi-spoofing characters), bounded memory everywhere, and meeting-note links that are unguessable and kept out of logs. Transcript text is treated as untrusted when sent to the AI
+- **Operations.** `/healthz` (liveness), `/readyz` (fails during shutdown), `/metrics` (Prometheus, opt-in), structured logs with request ids, client error reporting, and graceful shutdown that tells clients to reconnect
+
+### Code layout
+
+```
+server.js            entry point
+src/
+  server.js          wiring, graceful shutdown
+  app.js             HTTP: security headers, API, pages, vendor assets
+  signaling.js       Socket.IO events: join/resume, waiting room, chat, host controls
+  rooms.js           in-memory meeting state
+  reports.js         meeting notes lifecycle
+  ai.js              Claude integration (prompts, schemas, error handling)
+  config.js  logger.js  rateLimit.js  tokens.js  validate.js  ice.js  metrics.js
+public/
+  room.html  report.html  index.html
+  js/room/           the meeting client (ES modules)
+    call.js          session lifecycle and state reconciliation
+    peers.js         WebRTC mesh
+    media.js         camera, mic, screen, devices
+    effects.js       background blur and virtual backgrounds
+    stage.js         video tiles and layout
+    chat.js  people.js  reactions.js  notes.js  speech.js  ...
+  js/report.js       meeting notes page
+test/                node:test suites for the server, AI layer and HTTP API
+```
 
 ## Limitations
 
-- Mesh scales to ~8 people; each participant uploads their video n-1 times.
-- Recording captures whatever screen/tab you pick plus your mic (browser-local composition; there is no server-side recorder).
-- No persistence: chat history and rooms are gone when everyone leaves.
+- Mesh scales to about 8 people; each person uploads their video once per other participant
+- Live captions need a browser with speech recognition (Chrome, Edge, Safari). People on other browsers still see everyone else’s captions
+- Recording captures a screen or tab you pick plus your microphone, in your own browser; there’s no server-side recording
+- Meeting state is per server process, so this runs as a single instance. Running several would need a shared store (for example Redis) and sticky sessions

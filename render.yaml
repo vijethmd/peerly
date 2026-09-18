@@ -3,16 +3,23 @@ services:
     name: peerly
     runtime: node
     plan: free
-    buildCommand: npm install
+    buildCommand: npm ci --omit=dev
     startCommand: node server.js
     healthCheckPath: /healthz
+    autoDeploy: true
     envVars:
+      - key: NODE_ENV
+        value: production
       - key: MAX_ROOM_SIZE
         value: "8"
-      # Optional TURN relay for strict NATs - see README "TURN server" section.
+      # Lets calls resume across deploys and restarts. Render generates it once.
+      - key: SESSION_SECRET
+        generateValue: true
+      # Turns on AI meeting notes and "catch me up". Set it in the dashboard.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      # Optional TURN relay for strict NATs - see README "TURN server".
       # - key: TURN_URL
       #   sync: false
-      # - key: TURN_USERNAME
-      #   sync: false
-      # - key: TURN_CREDENTIAL
+      # - key: TURN_SECRET
       #   sync: false
