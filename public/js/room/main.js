@@ -1,7 +1,7 @@
 // Composition root for the meeting page: creates the modules and wires them
 // to each other.
 
-import { $, toast, announce, setIcon, openMenu, openDialog, copyToClipboard, formatDuration } from './ui.js';
+import { $, toast, clearToasts, announce, setIcon, openMenu, openDialog, copyToClipboard, formatDuration } from './ui.js';
 import { installErrorReporting } from './telemetry.js';
 import { loadSession, prefs, rememberRoom } from './session.js';
 import { BackgroundProcessor } from './effects.js';
@@ -553,6 +553,7 @@ function enterCall() {
 }
 
 function endCall({ reason, reportId, by, message }) {
+  clearToasts();
   clearInterval(timerInterval);
   wakeLock?.release?.().catch(() => {});
   wakeLock = null;

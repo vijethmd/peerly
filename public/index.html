@@ -4,88 +4,221 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="dark">
-  <meta name="theme-color" content="#0d1117">
+  <meta name="theme-color" content="#0a0a0a">
   <title>Peerly - Video calls that just work</title>
   <meta name="description" content="Free, private, peer-to-peer video meetings with live captions, AI meeting notes, background blur, reactions and private messages. No account needed.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="/fonts/geist/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body class="landing-body">
-  <header class="landing-header">
+  <header class="site-header">
     <a class="brand" href="/">
-      <svg class="brand-mark" viewBox="0 0 32 32" width="28" height="28" aria-hidden="true">
-        <rect width="32" height="32" rx="8" fill="#4f6ef7"/>
-        <path d="M7 11a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3h-8a3 3 0 0 1-3-3V11zm14 3.5 4.2-2.8a1 1 0 0 1 1.55.83v7.94a1 1 0 0 1-1.55.83L21 18.5v-4z" fill="#fff"/>
+      <svg class="brand-mark" viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
+        <rect width="32" height="32" fill="#fff"/>
+        <path d="M7 10h13v12H7zM21.5 14.2 26 11v10l-4.5-3.2z" fill="#0a0a0a"/>
       </svg>
       <span>Peerly</span>
     </a>
+    <nav class="site-nav" aria-label="Page sections">
+      <a href="#how">How it works</a>
+      <a href="#features">Features</a>
+    </nav>
+    <button class="header-cta" type="button" data-new-meeting>New meeting <span class="btn-arrow" aria-hidden="true">→</span></button>
   </header>
 
   <main class="landing-main">
     <section class="hero">
-      <h1>Video calls that<br><span class="accent">just work.</span></h1>
-      <p class="hero-sub">
-        Free, private, peer-to-peer meetings in your browser. No account, no installs.
-        Live captions, AI meeting notes, backgrounds and reactions are built in.
-      </p>
+      <div class="hero-inner">
+        <div class="hero-copy">
+          <p class="eyebrow load-in">Free · Private · Peer-to-peer</p>
+          <h1 class="load-in delay-1">
+            <span class="sr-only">Video calls for everyone.</span>
+            <span aria-hidden="true">
+              <span class="line">Video calls for</span>
+              <span class="line"><span id="typewriter" class="typewriter gradient-text">everyone</span><span class="caret"></span></span>
+            </span>
+          </h1>
+          <p class="hero-sub load-in delay-2">
+            Meetings that run in your browser and go straight between the people in them.
+            No account, no installs. Live captions, AI meeting notes, backgrounds and reactions are built in.
+          </p>
 
-      <div class="landing-actions">
-        <button id="newMeetingBtn" class="btn btn-primary btn-lg" type="button">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-            <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/>
-          </svg>
-          New meeting
-        </button>
-        <form id="joinForm" class="join-form" autocomplete="off">
-          <input id="joinInput" type="text" placeholder="Enter a code or link" aria-label="Meeting code or link" spellcheck="false">
-          <button type="submit" class="btn btn-ghost" id="joinBtn" disabled>Join</button>
-        </form>
-      </div>
+          <div class="landing-actions load-in delay-3">
+            <button id="newMeetingBtn" class="btn btn-primary btn-lg" type="button" data-new-meeting>
+              New meeting <span class="btn-arrow" aria-hidden="true">→</span>
+            </button>
+            <form id="joinForm" class="join-form" autocomplete="off">
+              <input id="joinInput" type="text" placeholder="Enter a code or link" aria-label="Meeting code or link" spellcheck="false">
+              <button type="submit" class="btn btn-ghost" id="joinBtn" disabled>Join</button>
+            </form>
+          </div>
 
-      <p id="landingError" class="landing-error" hidden></p>
+          <p id="landingError" class="landing-error" role="alert" hidden></p>
 
-      <div id="recentRooms" class="recent-rooms" hidden>
-        <h2>Recent meetings</h2>
-        <ul id="recentList"></ul>
+          <div id="recentRooms" class="recent-rooms load-in delay-4" hidden>
+            <h2 class="eyebrow">Recent meetings</h2>
+            <ul id="recentList"></ul>
+          </div>
+        </div>
+
+        <!-- Decorative: a tiny animated call. Speaker, captions and a reaction loop every 12 s. -->
+        <div class="hero-visual load-in delay-3" aria-hidden="true">
+          <div class="mock">
+            <div class="mock-bar">
+              <span>abc-defg-hij</span>
+              <span class="mock-pill"><i></i>Transcribing</span>
+            </div>
+            <div class="mock-stage">
+              <div class="mock-tile t1 s1"><span class="mock-person"></span><span class="mock-name">Alice</span></div>
+              <div class="mock-tile t2 s2"><span class="mock-person"></span><span class="mock-name">Bob</span></div>
+              <div class="mock-tile t3"><span class="mock-avatar">CD</span><span class="mock-name">Carol</span><span class="mock-react">🎉</span></div>
+              <div class="mock-tile t4 s3"><span class="mock-person"></span><span class="mock-name">Dev</span></div>
+              <div class="mock-caption">
+                <p><b>Alice</b>Can we ship the beta on Friday?</p>
+                <p><b>Bob</b>Yes, once the release notes are done.</p>
+                <p><b>Dev</b>I’ll write them up tonight.</p>
+              </div>
+            </div>
+            <div class="mock-controls">
+              <span><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1M12 18v4"/></svg></span>
+              <span><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg></span>
+              <span class="is-on"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M10.6 10.3a2.6 2.6 0 1 0 0 3.4M17.6 10.3a2.6 2.6 0 1 0 0 3.4"/></svg></span>
+              <span><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><path d="M8.5 14.5s1.3 1.8 3.5 1.8 3.5-1.8 3.5-1.8"/><path d="M9 9.5v.01M15 9.5v.01"/></svg></span>
+              <span><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M12 14V8m0 0l-3 3m3-3l3 3"/></svg></span>
+              <span class="is-leave"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11l-1.27 1.27"/><path d="M22 2L2 22"/></svg></span>
+            </div>
+          </div>
+          <div class="mock-note">
+            <p class="mock-note-label">AI notes</p>
+            <p class="mock-note-line">Ship the beta on Friday</p>
+            <p class="mock-note-line">Dev writes the release notes</p>
+          </div>
+        </div>
       </div>
     </section>
 
-    <section class="features" aria-label="What Peerly can do">
-      <div class="feature-card">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-        <h3>Private by design</h3>
-        <p>Audio and video go straight between participants, end-to-end encrypted by WebRTC. The server never sees them.</p>
+    <div class="marquee" aria-hidden="true">
+      <div class="marquee-track">
+        <div class="marquee-group">
+          <span class="marquee-item">Peer-to-peer</span>
+          <span class="marquee-item">End-to-end encrypted</span>
+          <span class="marquee-item">AI meeting notes</span>
+          <span class="marquee-item">Live captions</span>
+          <span class="marquee-item">Background blur</span>
+          <span class="marquee-item">Private messages</span>
+          <span class="marquee-item">Reactions</span>
+          <span class="marquee-item">Waiting room</span>
+          <span class="marquee-item">No account needed</span>
+        </div>
+        <div class="marquee-group">
+          <span class="marquee-item">Peer-to-peer</span>
+          <span class="marquee-item">End-to-end encrypted</span>
+          <span class="marquee-item">AI meeting notes</span>
+          <span class="marquee-item">Live captions</span>
+          <span class="marquee-item">Background blur</span>
+          <span class="marquee-item">Private messages</span>
+          <span class="marquee-item">Reactions</span>
+          <span class="marquee-item">Waiting room</span>
+          <span class="marquee-item">No account needed</span>
+        </div>
       </div>
-      <div class="feature-card">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/><path d="M18.5 15.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg>
-        <h3>AI meeting notes</h3>
-        <p>Live captions, a searchable transcript, a “catch me up” recap, and notes with decisions and action items when you hang up.</p>
+    </div>
+
+    <section id="how" class="section" aria-labelledby="howTitle">
+      <div class="section-inner">
+        <p class="eyebrow reveal">How it works</p>
+        <h2 id="howTitle" class="section-title reveal delay-1">Click, share, talk.</h2>
+        <ol class="steps">
+          <li class="step reveal">
+            <span class="step-num">1</span>
+            <h3>Start a meeting</h3>
+            <p>One click gives you a private link. There’s nothing to sign up for and nothing to download.</p>
+          </li>
+          <li class="step reveal delay-1">
+            <span class="step-num">2</span>
+            <h3>Share the link</h3>
+            <p>Send it to up to seven other people. They join from any modern browser, on a laptop or a phone.</p>
+          </li>
+          <li class="step reveal delay-2">
+            <span class="step-num">3</span>
+            <h3>Talk</h3>
+            <p>Video, captions and chat go straight between you. Hang up and get the notes.</p>
+          </li>
+        </ol>
       </div>
-      <div class="feature-card">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="12" cy="10" r="3"/><path d="M6.5 20a5.5 5.5 0 0 1 11 0"/></svg>
-        <h3>Backgrounds and blur</h3>
-        <p>Blur your room or pick a virtual background. It all runs on your device, so your camera feed isn’t uploaded anywhere.</p>
+    </section>
+
+    <section id="features" class="section" aria-labelledby="featuresTitle">
+      <div class="section-inner">
+        <p class="eyebrow reveal">Features</p>
+        <h2 id="featuresTitle" class="section-title reveal delay-1">Everything a meeting needs. Nothing it doesn’t.</h2>
+        <div class="features">
+          <article class="feature-card reveal">
+            <div class="feature-top">
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true"><rect x="4" y="11" width="16" height="10"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+              <span class="feature-index">01</span>
+            </div>
+            <h3>Private by design</h3>
+            <p>Audio and video go straight between participants, end-to-end encrypted by WebRTC. The server never sees them.</p>
+          </article>
+          <article class="feature-card reveal delay-1">
+            <div class="feature-top">
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/><path d="M18.5 15.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg>
+              <span class="feature-index">02</span>
+            </div>
+            <h3>AI meeting notes</h3>
+            <p>Live captions, a searchable transcript, a “catch me up” recap, and notes with decisions and action items when you hang up.</p>
+          </article>
+          <article class="feature-card reveal delay-2">
+            <div class="feature-top">
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true"><rect x="3" y="3" width="18" height="18"/><circle cx="12" cy="10" r="3"/><path d="M6.5 21a5.5 5.5 0 0 1 11 0"/></svg>
+              <span class="feature-index">03</span>
+            </div>
+            <h3>Backgrounds and blur</h3>
+            <p>Blur your room or pick a virtual background. It all runs on your device, so your camera feed isn’t uploaded anywhere.</p>
+          </article>
+          <article class="feature-card reveal">
+            <div class="feature-top">
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true"><path d="M3 4h18v13H9l-4 3.5V17H3z"/><path d="M8 10.5h.01M12 10.5h.01M16 10.5h.01"/></svg>
+              <span class="feature-index">04</span>
+            </div>
+            <h3>Reactions and chat</h3>
+            <p>Send reactions everyone sees, raise your hand, and message the whole meeting or one person privately.</p>
+          </article>
+          <article class="feature-card reveal delay-1">
+            <div class="feature-top">
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true"><path d="M21 4v6h-6M3 20v-6h6"/><path d="M4.5 9a8 8 0 0 1 13.4-3.2L21 9M3 15l3.1 3.2A8 8 0 0 0 19.5 15"/></svg>
+              <span class="feature-index">05</span>
+            </div>
+            <h3>Stays connected</h3>
+            <p>Calls keep running through Wi-Fi drops, page reloads and server updates, and reconnect on their own.</p>
+          </article>
+          <article class="feature-card reveal delay-2">
+            <div class="feature-top">
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>
+              <span class="feature-index">06</span>
+            </div>
+            <h3>Host controls</h3>
+            <p>Ask-to-join waiting room, mute, spotlight, presenting approval, and end the meeting for everyone.</p>
+          </article>
+        </div>
       </div>
-      <div class="feature-card">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path d="M8.5 14.5s1.3 1.8 3.5 1.8 3.5-1.8 3.5-1.8"/><path d="M9 9.5v.01M15 9.5v.01"/></svg>
-        <h3>Reactions and chat</h3>
-        <p>Send reactions everyone sees, raise your hand, and message the whole meeting or one person privately.</p>
-      </div>
-      <div class="feature-card">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15"/></svg>
-        <h3>Stays connected</h3>
-        <p>Calls keep running through Wi-Fi drops, page reloads and server updates, and reconnect on their own.</p>
-      </div>
-      <div class="feature-card">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.5l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 17.4 6.2 20.4l1.1-6.5L2.6 9.3l6.5-.9z"/></svg>
-        <h3>Host controls</h3>
-        <p>Ask-to-join waiting room, mute, spotlight, presenting approval, and end the meeting for everyone.</p>
+    </section>
+
+    <section class="section" aria-labelledby="ctaTitle">
+      <div class="section-inner cta-band reveal">
+        <h2 id="ctaTitle">Your next meeting is <span class="gradient-text">one click away.</span></h2>
+        <button class="btn btn-primary btn-lg" type="button" data-new-meeting>
+          New meeting <span class="btn-arrow" aria-hidden="true">→</span>
+        </button>
       </div>
     </section>
   </main>
 
   <footer class="landing-footer">
-    <p>Up to 8 people per meeting · Built with WebRTC</p>
+    <p>Peerly · Up to 8 people per meeting</p>
+    <p>Built on WebRTC · No account needed</p>
   </footer>
 
   <script src="/js/landing.js"></script>

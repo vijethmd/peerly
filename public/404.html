@@ -3,16 +3,28 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0a0a0a">
   <title>Page not found - Peerly</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="/fonts/geist/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body class="landing-body">
+  <header class="site-header">
+    <a class="brand" href="/">
+      <svg class="brand-mark" viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
+        <rect width="32" height="32" fill="#fff"/>
+        <path d="M7 10h13v12H7zM21.5 14.2 26 11v10l-4.5-3.2z" fill="#0a0a0a"/>
+      </svg>
+      <span>Peerly</span>
+    </a>
+  </header>
   <main class="notfound">
-    <p class="notfound-code">404</p>
-    <h1>This page doesn't exist</h1>
-    <p>The link may be broken, or the meeting notes may have expired.</p>
-    <a class="btn btn-primary" href="/">Go to Peerly</a>
+    <p class="notfound-code load-in">Error 404</p>
+    <h1 class="load-in delay-1">This page doesn’t exist.</h1>
+    <p class="load-in delay-2">The link may be broken, or the meeting notes may have expired.</p>
+    <a class="btn btn-primary btn-lg load-in delay-3" href="/">Go to Peerly <span class="btn-arrow" aria-hidden="true">→</span></a>
   </main>
 </body>
 </html>

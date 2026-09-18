@@ -4,9 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="color-scheme" content="dark">
-  <meta name="theme-color" content="#0d1117">
+  <meta name="theme-color" content="#0a0a0a">
   <title>Meeting - Peerly</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="/fonts/geist/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="/css/room.css">
   <script src="/socket.io/socket.io.js" defer></script>
@@ -22,13 +23,16 @@
 
   <!-- ============================ PRE-JOIN ============================ -->
   <section id="lobby" class="lobby" aria-labelledby="lobbyTitle">
-    <a class="brand lobby-brand" href="/">
-      <svg class="brand-mark" viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
-        <rect width="32" height="32" rx="8" fill="#4f6ef7"/>
-        <path d="M7 11a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3h-8a3 3 0 0 1-3-3V11zm14 3.5 4.2-2.8a1 1 0 0 1 1.55.83v7.94a1 1 0 0 1-1.55.83L21 18.5v-4z" fill="#fff"/>
-      </svg>
-      <span>Peerly</span>
-    </a>
+    <header class="lobby-bar">
+      <a class="brand" href="/">
+        <svg class="brand-mark" viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
+          <rect width="32" height="32" fill="#fff"/>
+          <path d="M7 10h13v12H7zM21.5 14.2 26 11v10l-4.5-3.2z" fill="#0a0a0a"/>
+        </svg>
+        <span>Peerly</span>
+      </a>
+      <span class="eyebrow lobby-bar-note">Check your camera and mic</span>
+    </header>
 
     <div class="lobby-content">
       <div class="lobby-preview">
@@ -91,8 +95,8 @@
     <header class="call-header">
       <div class="call-header-left">
         <svg class="brand-mark" viewBox="0 0 32 32" width="22" height="22" aria-hidden="true">
-          <rect width="32" height="32" rx="8" fill="#4f6ef7"/>
-          <path d="M7 11a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3h-8a3 3 0 0 1-3-3V11zm14 3.5 4.2-2.8a1 1 0 0 1 1.55.83v7.94a1 1 0 0 1-1.55.83L21 18.5v-4z" fill="#fff"/>
+          <rect width="32" height="32" fill="#fff"/>
+          <path d="M7 10h13v12H7zM21.5 14.2 26 11v10l-4.5-3.2z" fill="#0a0a0a"/>
         </svg>
         <span id="callRoomId" class="room-code"></span>
         <button id="copyLinkBtn" class="chip-btn" type="button" title="Copy the meeting link">

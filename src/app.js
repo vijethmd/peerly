@@ -12,6 +12,12 @@ const { randomId, safeEqual } = require('./tokens');
 const { clientFeatures, MEDIAPIPE_DIR, MEDIAPIPE_BASE, SEGMENTER_MODEL_PATH } = require('./features');
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+// Self-hosted Geist / Geist Mono (OFL) so the strict CSP needs no font CDN.
+const FONT_DIRS = {
+  geist: path.join(path.dirname(require.resolve('@fontsource-variable/geist/package.json')), 'files'),
+  'geist-mono': path.join(path.dirname(require.resolve('@fontsource-variable/geist-mono/package.json')), 'files')
+};
+const FONT_FILE_RE = /^geist(-mono)?-(latin|latin-ext|cyrillic|cyrillic-ext|vietnamese)-wght-normal\.woff2$/;
 const MAX_MODEL_BYTES = 20 * 1024 * 1024;
 const VENDOR_FILES = new Set(['vision_bundle.mjs', 'vision_bundle.mjs.map']);
 const HOST_RE = /^[A-Za-z0-9.-]+(?::\d{1,5})?$|^\[[0-9A-Fa-f:.]+\](?::\d{1,5})?$/;
@@ -202,6 +208,14 @@ function createApp({ config, logger, registry, reports, ai, metrics, lifecycle, 
 
   api.use((req, res) => res.status(404).json({ error: 'Not found' }));
   app.use('/api', api);
+
+  app.get('/fonts/:family/:file', (req, res, next) => {
+    const dir = FONT_DIRS[req.params.family];
+    if (!dir || !FONT_FILE_RE.test(req.params.file)) return next();
+    res.set('Cache-Control', 'public, max-age=2592000');
+    res.type('font/woff2');
+    return res.sendFile(path.join(dir, req.params.file));
+  });
 
   // --------------------------------------------------- background effects
   app.get(`${MEDIAPIPE_BASE}/:file`, (req, res, next) => {
