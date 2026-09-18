@@ -195,6 +195,12 @@ export function toast(message, { tone = 'info', timeout = 4500, actions = [], id
   return { close, el };
 }
 
+/** Drops every toast, e.g. join requests that no longer apply once the call is over. */
+export function clearToasts() {
+  toastRoot ||= $('#toasts');
+  toastRoot?.replaceChildren();
+}
+
 export function announce(message) {
   const region = $('#srAnnouncer');
   if (!region) return;
