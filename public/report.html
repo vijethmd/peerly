@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Meeting notes - Peerly</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/report.css">
+  <script type="module" src="/js/report.js"></script>
+</head>
+<body class="report-body">
+  <header class="report-header">
+    <a class="brand" href="/">
+      <svg class="brand-mark" viewBox="0 0 32 32" width="24" height="24" aria-hidden="true">
+        <rect width="32" height="32" rx="8" fill="#4f6ef7"/>
+        <path d="M7 11a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3h-8a3 3 0 0 1-3-3V11zm14 3.5 4.2-2.8a1 1 0 0 1 1.55.83v7.94a1 1 0 0 1-1.55.83L21 18.5v-4z" fill="#fff"/>
+      </svg>
+      <span>Peerly</span>
+    </a>
+    <div id="reportActions" class="report-actions" hidden>
+      <button id="copyLinkBtn" class="mini-btn" type="button">Copy link</button>
+      <button id="downloadBtn" class="mini-btn" type="button">Download notes</button>
+      <button id="printBtn" class="mini-btn" type="button">Print</button>
+    </div>
+  </header>
+
+  <main class="report-main">
+    <div id="reportState" class="report-state">
+      <div class="spinner" aria-hidden="true"></div>
+      <p>Loading the meeting notes…</p>
+    </div>
+
+    <article id="reportContent" hidden>
+      <section class="report-hero">
+        <p class="report-eyebrow">Meeting notes</p>
+        <h1 id="reportTitle">Meeting</h1>
+        <p id="reportMeta" class="report-meta"></p>
+      </section>
+
+      <div id="aiBanner" class="report-banner" hidden></div>
+      <section id="statTiles" class="stat-row" aria-label="Meeting at a glance"></section>
+      <section id="aiSection" class="report-sections"></section>
+      <section id="participationSection" class="report-card" hidden></section>
+      <section id="timelineSection" class="report-card" hidden></section>
+      <section id="transcriptSection" class="report-card" hidden></section>
+      <section id="chatSection" class="report-card" hidden></section>
+
+      <footer id="reportFooter" class="report-footer"></footer>
+    </article>
+  </main>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+</body>
+</html>
