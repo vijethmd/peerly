@@ -2,15 +2,26 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0d1117">
   <title>Meeting - Peerly</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f6ef7'/%3E%3Cpath d='M7 11a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3h-8a3 3 0 0 1-3-3V11zm14 3.5 4.2-2.8a1 1 0 0 1 1.55.83v7.94a1 1 0 0 1-1.55.83L21 18.5v-4z' fill='white'/%3E%3C/svg%3E">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/room.css">
+  <script src="/socket.io/socket.io.js" defer></script>
+  <script type="module" src="/js/room/main.js"></script>
 </head>
 <body class="room-body">
+  <p id="srAnnouncer" class="sr-only" aria-live="polite"></p>
 
-  <!-- ============ PRE-JOIN LOBBY ============ -->
-  <div id="lobby" class="lobby">
+  <div id="appBanner" class="app-banner" role="status" hidden>
+    <span id="appBannerText"></span>
+    <button id="appBannerAction" class="banner-btn" type="button" hidden></button>
+  </div>
+
+  <!-- ============================ PRE-JOIN ============================ -->
+  <section id="lobby" class="lobby" aria-labelledby="lobbyTitle">
     <a class="brand lobby-brand" href="/">
       <svg class="brand-mark" viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
         <rect width="32" height="32" rx="8" fill="#4f6ef7"/>
@@ -25,38 +36,57 @@
           <video id="previewVideo" autoplay playsinline muted></video>
           <div id="previewPlaceholder" class="preview-placeholder">
             <div class="avatar avatar-lg" id="previewAvatar">?</div>
-            <p id="previewStatus">Camera is off</p>
+            <p id="previewStatus">Starting your camera…</p>
+          </div>
+          <div class="preview-meter">
+            <div id="lobbyMicMeter" class="mic-meter" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
           </div>
           <div class="preview-controls">
-            <button id="lobbyMicBtn" class="ctrl-btn" data-on="true" title="Toggle microphone" aria-label="Toggle microphone"></button>
-            <button id="lobbyCamBtn" class="ctrl-btn" data-on="true" title="Toggle camera" aria-label="Toggle camera"></button>
+            <button id="lobbyMicBtn" class="ctrl-btn" type="button" data-on="true" aria-label="Turn off microphone"></button>
+            <button id="lobbyCamBtn" class="ctrl-btn" type="button" data-on="true" aria-label="Turn off camera"></button>
+            <button id="lobbyEffectsBtn" class="ctrl-btn ctrl-neutral" type="button" title="Backgrounds and effects" aria-label="Backgrounds and effects">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="12" cy="10" r="3"/><path d="M6.5 20a5.5 5.5 0 0 1 11 0"/></svg>
+            </button>
           </div>
         </div>
         <div class="device-selects">
-          <label>
-            <span>Microphone</span>
-            <select id="micSelect"><option>Default microphone</option></select>
-          </label>
-          <label>
-            <span>Camera</span>
-            <select id="camSelect"><option>Default camera</option></select>
-          </label>
+          <label><span>Microphone</span><select id="micSelect"></select></label>
+          <label><span>Camera</span><select id="camSelect"></select></label>
+          <label id="speakerSelectWrap"><span>Speaker</span><select id="speakerSelect"></select></label>
         </div>
         <p id="mediaWarning" class="media-warning" hidden></p>
       </div>
 
       <div class="lobby-join">
-        <h1>Ready to join?</h1>
-        <p class="lobby-room-line">Room <span id="lobbyRoomId" class="room-code"></span></p>
-        <p id="lobbyOccupancy" class="lobby-occupancy">Checking room...</p>
-        <input id="nameInput" type="text" maxlength="30" placeholder="Your name" aria-label="Your name" autocomplete="name">
-        <button id="joinRoomBtn" class="btn btn-primary btn-lg" disabled>Join now</button>
-        <p id="joinError" class="landing-error" hidden></p>
+        <h1 id="lobbyTitle">Ready to join?</h1>
+        <p class="lobby-room-line">Meeting <span id="lobbyRoomId" class="room-code"></span></p>
+        <p id="lobbyOccupancy" class="lobby-occupancy">Checking the meeting…</p>
+        <form id="joinForm" class="join-panel" autocomplete="off">
+          <label class="sr-only" for="nameInput">Your name</label>
+          <input id="nameInput" type="text" maxlength="30" placeholder="Your name" autocomplete="name" required>
+          <button id="joinRoomBtn" class="btn btn-primary btn-lg" type="submit" disabled>Join now</button>
+        </form>
+        <p id="joinError" class="form-error" role="alert" hidden></p>
+        <ul class="lobby-perks">
+          <li>Audio and video go straight to the other people, end-to-end encrypted</li>
+          <li>Background blur, reactions, private messages and live captions</li>
+          <li>Calls keep running through short network drops</li>
+        </ul>
       </div>
     </div>
-  </div>
+  </section>
 
-  <!-- ============ CALL UI ============ -->
+  <!-- ========================== WAITING ROOM ========================== -->
+  <section id="waiting" class="state-screen" hidden>
+    <div class="state-card">
+      <div class="spinner" aria-hidden="true"></div>
+      <h1>Asking to join…</h1>
+      <p id="waitingText">You’ll join the call as soon as someone lets you in.</p>
+      <button id="cancelKnockBtn" class="btn btn-ghost" type="button">Cancel</button>
+    </div>
+  </section>
+
+  <!-- ============================== CALL ============================== -->
   <div id="call" class="call" hidden>
     <header class="call-header">
       <div class="call-header-left">
@@ -65,103 +95,285 @@
           <path d="M7 11a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3h-8a3 3 0 0 1-3-3V11zm14 3.5 4.2-2.8a1 1 0 0 1 1.55.83v7.94a1 1 0 0 1-1.55.83L21 18.5v-4z" fill="#fff"/>
         </svg>
         <span id="callRoomId" class="room-code"></span>
-        <button id="copyLinkBtn" class="chip-btn" title="Copy meeting link">
+        <button id="copyLinkBtn" class="chip-btn" type="button" title="Copy the meeting link">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-          Copy link
+          <span class="chip-label">Copy link</span>
         </button>
       </div>
       <div class="call-header-right">
-        <span id="recIndicator" class="rec-indicator" hidden><span class="rec-dot"></span>REC</span>
+        <span id="netPill" class="pill pill-warn" hidden>Unstable connection</span>
+        <span id="transcribingPill" class="pill pill-accent" hidden><i class="dot"></i>Transcribing</span>
+        <span id="lockedPill" class="pill" hidden>Locked</span>
+        <span id="recPill" class="pill pill-danger" hidden><i class="dot"></i>REC</span>
         <span id="callTimer" class="call-timer">00:00</span>
       </div>
     </header>
 
     <main class="call-main">
-      <div id="videoGrid" class="video-grid"></div>
+      <div class="stage">
+        <div id="videoGrid" class="video-grid" aria-label="People in the meeting"></div>
+        <div id="reactionLayer" class="reaction-layer" aria-hidden="true"></div>
+        <div id="captions" class="captions" hidden></div>
+      </div>
 
-      <!-- Chat panel -->
-      <aside id="chatPanel" class="side-panel" hidden>
+      <!-- Messages -->
+      <aside id="chatPanel" class="side-panel" aria-labelledby="chatTitle" hidden>
         <div class="panel-header">
-          <h2>Chat</h2>
-          <button class="icon-btn panel-close" data-close="chatPanel" aria-label="Close chat">
+          <h2 id="chatTitle">In-call messages</h2>
+          <button class="icon-btn panel-close" type="button" aria-label="Close messages">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
           </button>
         </div>
-        <div id="chatMessages" class="chat-messages" aria-live="polite"></div>
+        <p id="chatNotice" class="panel-notice"></p>
+        <div id="chatMessages" class="chat-messages" role="log" aria-live="polite" aria-relevant="additions"></div>
         <form id="chatForm" class="chat-form" autocomplete="off">
-          <input id="chatInput" type="text" maxlength="2000" placeholder="Send a message" aria-label="Chat message">
-          <button type="submit" class="icon-btn chat-send" aria-label="Send message">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-          </button>
+          <div class="chat-to">
+            <label for="chatTo">To</label>
+            <select id="chatTo"><option value="">Everyone</option></select>
+          </div>
+          <div class="chat-compose">
+            <textarea id="chatInput" rows="1" maxlength="2000" placeholder="Send a message to everyone" aria-label="Message"></textarea>
+            <button type="submit" class="icon-btn chat-send" aria-label="Send message">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+            </button>
+          </div>
         </form>
       </aside>
 
-      <!-- Participants panel -->
-      <aside id="peoplePanel" class="side-panel" hidden>
+      <!-- People -->
+      <aside id="peoplePanel" class="side-panel" aria-labelledby="peopleTitle" hidden>
         <div class="panel-header">
-          <h2>Participants <span id="peopleCount"></span></h2>
-          <button class="icon-btn panel-close" data-close="peoplePanel" aria-label="Close participants">
+          <h2 id="peopleTitle">People <span id="peopleCount" class="panel-count"></span></h2>
+          <button class="icon-btn panel-close" type="button" aria-label="Close people">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
           </button>
         </div>
-        <div id="peopleHostBar" class="people-hostbar" hidden>
-          <button id="muteAllBtn" class="hostbar-btn">Mute everyone</button>
-          <button id="lockRoomBtn" class="hostbar-btn">Lock meeting</button>
+        <div class="panel-scroll">
+          <button id="copyInviteBtn" class="btn btn-ghost btn-sm invite-btn" type="button">Copy the meeting link</button>
+
+          <section id="waitingSection" class="people-section" hidden>
+            <div class="people-section-head">
+              <h3>Waiting to join <span id="waitingCount" class="panel-count"></span></h3>
+              <button id="admitAllBtn" class="mini-btn" type="button">Admit all</button>
+            </div>
+            <ul id="waitingList" class="people-list"></ul>
+          </section>
+
+          <section id="hostControls" class="host-controls" hidden>
+            <h3>Host controls</h3>
+            <label class="switch-row">
+              <span><strong>Ask to join</strong><small>People knock and you let them in</small></span>
+              <input id="lockToggle" type="checkbox" role="switch">
+            </label>
+            <label class="switch-row">
+              <span><strong>Private messages</strong><small>Let people message each other privately</small></span>
+              <input id="privateChatToggle" type="checkbox" role="switch">
+            </label>
+            <label class="switch-row">
+              <span><strong>Approve presenting</strong><small>People ask before sharing their screen</small></span>
+              <input id="shareApprovalToggle" type="checkbox" role="switch">
+            </label>
+            <div class="host-actions">
+              <button id="muteAllBtn" class="mini-btn" type="button">Mute everyone</button>
+              <button id="lowerHandsBtn" class="mini-btn" type="button" hidden>Lower all hands</button>
+              <button id="endForAllBtn" class="mini-btn mini-btn-danger" type="button">End for everyone</button>
+            </div>
+          </section>
+
+          <section class="people-section">
+            <div class="people-section-head"><h3>In the meeting</h3></div>
+            <ul id="peopleList" class="people-list"></ul>
+          </section>
         </div>
-        <ul id="peopleList" class="people-list"></ul>
       </aside>
 
-      <!-- Keyboard shortcuts overlay -->
-      <div id="shortcutsOverlay" class="shortcuts-overlay" hidden>
-        <div class="shortcuts-card">
-          <h2>Keyboard shortcuts</h2>
-          <dl>
-            <div><dt>M</dt><dd>Toggle microphone</dd></div>
-            <div><dt>V</dt><dd>Toggle camera</dd></div>
-            <div><dt>H</dt><dd>Raise or lower hand</dd></div>
-            <div><dt>C</dt><dd>Open or close chat</dd></div>
-            <div><dt>P</dt><dd>Open or close participants</dd></div>
-            <div><dt>Esc</dt><dd>Exit focused view</dd></div>
-            <div><dt>?</dt><dd>Show this help</dd></div>
-          </dl>
-          <button class="btn btn-ghost" id="shortcutsClose">Close</button>
+      <!-- Transcript & AI notes -->
+      <aside id="notesPanel" class="side-panel" aria-labelledby="notesTitle" hidden>
+        <div class="panel-header">
+          <h2 id="notesTitle">Transcript &amp; AI notes</h2>
+          <button class="icon-btn panel-close" type="button" aria-label="Close notes">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
         </div>
-      </div>
+        <div class="panel-scroll">
+          <section id="transcriptStatus" class="notes-card"></section>
+
+          <section id="catchUpCard" class="notes-card" hidden>
+            <div class="notes-card-head">
+              <h3>Catch me up</h3>
+              <button id="catchUpBtn" class="btn btn-primary btn-sm" type="button">Catch me up</button>
+            </div>
+            <p class="notes-hint">A quick AI summary of what has been said so far.</p>
+            <div id="catchUpResult" class="recap" hidden></div>
+          </section>
+
+          <section id="reportCard" class="notes-card" hidden>
+            <h3>Meeting notes link</h3>
+            <p class="notes-hint">AI notes and the full transcript will be here when the meeting ends.</p>
+            <div class="link-row">
+              <a id="reportLink" href="#" target="_blank" rel="noopener"></a>
+              <button id="copyReportBtn" class="mini-btn" type="button">Copy</button>
+            </div>
+          </section>
+
+          <section class="notes-card notes-transcript">
+            <div class="notes-card-head">
+              <h3>Live transcript</h3>
+              <button id="downloadTranscriptBtn" class="mini-btn" type="button" disabled>Download</button>
+            </div>
+            <div id="transcriptList" class="transcript-list"></div>
+          </section>
+        </div>
+      </aside>
     </main>
 
     <footer class="call-controls">
-      <div class="controls-group">
-        <button id="micBtn" class="ctrl-btn" data-on="true" title="Toggle microphone (M)" aria-label="Toggle microphone"></button>
-        <button id="camBtn" class="ctrl-btn" data-on="true" title="Toggle camera (V)" aria-label="Toggle camera"></button>
-        <button id="shareBtn" class="ctrl-btn ctrl-neutral" title="Share screen" aria-label="Share screen">
+      <div class="controls-side controls-left">
+        <span id="controlsClock" class="controls-clock"></span>
+        <span class="controls-sep" aria-hidden="true">|</span>
+        <span id="controlsRoom" class="controls-room"></span>
+      </div>
+
+      <div class="controls-center" role="toolbar" aria-label="Call controls">
+        <button id="micBtn" class="ctrl-btn" type="button" data-on="true" title="Turn off microphone (M)" aria-label="Turn off microphone"></button>
+        <button id="camBtn" class="ctrl-btn" type="button" data-on="true" title="Turn off camera (V)" aria-label="Turn off camera"></button>
+        <button id="ccBtn" class="ctrl-btn ctrl-neutral" type="button" title="Captions (L)" aria-label="Captions" aria-pressed="false">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M10.6 10.3a2.6 2.6 0 1 0 0 3.4M17.6 10.3a2.6 2.6 0 1 0 0 3.4"/></svg>
+        </button>
+        <div class="reaction-anchor">
+          <div id="reactionTray" class="reaction-tray" role="toolbar" aria-label="Send a reaction" hidden></div>
+          <button id="reactBtn" class="ctrl-btn ctrl-neutral" type="button" title="Send a reaction (E)" aria-label="Send a reaction" aria-haspopup="true" aria-expanded="false" aria-controls="reactionTray">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path d="M8.5 14.5s1.3 1.8 3.5 1.8 3.5-1.8 3.5-1.8"/><path d="M9 9.5v.01M15 9.5v.01"/></svg>
+          </button>
+        </div>
+        <button id="shareBtn" class="ctrl-btn ctrl-neutral" type="button" title="Present your screen" aria-label="Present your screen">
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M12 14V8m0 0l-3 3m3-3l3 3"/></svg>
         </button>
-        <button id="handBtn" class="ctrl-btn ctrl-neutral" title="Raise hand (H)" aria-label="Raise hand">
+        <button id="handBtn" class="ctrl-btn ctrl-neutral" type="button" title="Raise your hand (H)" aria-label="Raise your hand" aria-pressed="false">
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 11V6.5a1.5 1.5 0 0 0-3 0V11m0-1V4.5a1.5 1.5 0 0 0-3 0V10m0 .5v-6a1.5 1.5 0 0 0-3 0V12m9-1.5v2a7.5 7.5 0 0 1-7.5 7.5h-.36a6 6 0 0 1-5.06-2.78L3.5 13.5a1.63 1.63 0 0 1 2.6-1.95L7.5 13"/></svg>
         </button>
-        <button id="recordBtn" class="ctrl-btn ctrl-neutral" title="Record meeting" aria-label="Record meeting">
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/></svg>
+        <button id="moreBtn" class="ctrl-btn ctrl-neutral" type="button" title="More options" aria-label="More options" aria-haspopup="menu" aria-expanded="false">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="12" cy="19" r="1.4"/></svg>
         </button>
-        <button id="leaveBtn" class="ctrl-btn ctrl-danger" title="Leave call" aria-label="Leave call">
+        <button id="leaveBtn" class="ctrl-btn ctrl-danger" type="button" title="Leave the meeting" aria-label="Leave the meeting">
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11l-1.27 1.27"/><path d="M22 2L2 22" stroke-width="2.4"/></svg>
         </button>
       </div>
-      <div class="controls-group controls-right">
-        <button id="chatBtn" class="ctrl-btn ctrl-neutral has-badge" title="Chat (C)" aria-label="Toggle chat">
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-          <span id="chatBadge" class="badge" hidden></span>
+
+      <div class="controls-side controls-right">
+        <button id="notesBtn" class="ctrl-icon has-badge" type="button" title="Transcript and AI notes (N)" aria-label="Transcript and AI notes" aria-expanded="false">
+          <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/><path d="M18.5 15.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg>
+          <span id="notesBadge" class="badge" hidden></span>
         </button>
-        <button id="peopleBtn" class="ctrl-btn ctrl-neutral has-badge" title="Participants (P)" aria-label="Toggle participants">
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-          <span id="peopleBadge" class="badge badge-neutral"></span>
+        <button id="peopleBtn" class="ctrl-icon has-badge" type="button" title="People (P)" aria-label="People" aria-expanded="false">
+          <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <span id="peopleBadge" class="badge badge-neutral">1</span>
+        </button>
+        <button id="chatBtn" class="ctrl-icon has-badge" type="button" title="Messages (C)" aria-label="Messages" aria-expanded="false">
+          <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span id="chatBadge" class="badge" hidden></span>
         </button>
       </div>
     </footer>
   </div>
 
-  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <!-- ============================== ENDED ============================== -->
+  <section id="ended" class="state-screen" hidden>
+    <div class="state-card">
+      <h1 id="endedTitle">You left the meeting</h1>
+      <p id="endedText"></p>
+      <div id="endedReport" class="ended-report" hidden>
+        <h2>Meeting notes</h2>
+        <p id="endedReportText"></p>
+        <a id="endedReportLink" class="btn btn-ghost btn-sm" href="#" target="_blank" rel="noopener">Open meeting notes</a>
+      </div>
+      <div class="state-actions">
+        <button id="rejoinBtn" class="btn btn-ghost" type="button">Rejoin</button>
+        <a class="btn btn-primary" href="/">Back to home</a>
+      </div>
+    </div>
+  </section>
 
-  <script src="/socket.io/socket.io.js"></script>
-  <script src="/js/room.js"></script>
+  <!-- ============================= DIALOGS ============================= -->
+  <dialog id="effectsDialog" class="dialog dialog-wide" aria-labelledby="effectsTitle">
+    <div class="dialog-header">
+      <h2 id="effectsTitle">Backgrounds and effects</h2>
+      <button class="icon-btn" type="button" data-dialog-close aria-label="Close">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="effects-layout">
+      <div class="effects-preview">
+        <video id="effectsPreview" autoplay playsinline muted></video>
+        <p id="effectsPreviewOff" class="effects-preview-off" hidden>Turn on your camera to preview effects</p>
+      </div>
+      <div class="effects-options">
+        <h3>Blur</h3>
+        <div id="effectsBlur" class="effects-grid"></div>
+        <h3>Backgrounds</h3>
+        <div id="effectsBackgrounds" class="effects-grid"></div>
+        <input id="effectsUpload" type="file" accept="image/*" hidden>
+        <p id="effectsStatus" class="effects-status" hidden></p>
+        <p class="dialog-note">Effects run on your device. Your camera image is processed in this browser and never uploaded.</p>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="settingsDialog" class="dialog" aria-labelledby="settingsTitle">
+    <div class="dialog-header">
+      <h2 id="settingsTitle">Settings</h2>
+      <button class="icon-btn" type="button" data-dialog-close aria-label="Close">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="dialog-body">
+      <label class="field"><span>Microphone</span><select id="settingsMic"></select></label>
+      <div id="settingsMicMeter" class="mic-meter mic-meter-wide" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <label class="field" id="settingsSpeakerField">
+        <span>Speaker</span>
+        <span class="field-row"><select id="settingsSpeaker"></select><button id="testSpeakerBtn" class="mini-btn" type="button">Test</button></span>
+      </label>
+      <label class="field"><span>Camera</span><select id="settingsCam"></select></label>
+      <label class="switch-row">
+        <span><strong>Data saver</strong><small>Send and receive lower quality video</small></span>
+        <input id="dataSaverToggle" type="checkbox" role="switch">
+      </label>
+    </div>
+  </dialog>
+
+  <dialog id="shortcutsDialog" class="dialog" aria-labelledby="shortcutsTitle">
+    <div class="dialog-header">
+      <h2 id="shortcutsTitle">Keyboard shortcuts</h2>
+      <button class="icon-btn" type="button" data-dialog-close aria-label="Close">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="dialog-body">
+      <dl class="shortcuts">
+        <div><dt>M</dt><dd>Microphone on or off</dd></div>
+        <div><dt>V</dt><dd>Camera on or off</dd></div>
+        <div><dt>H</dt><dd>Raise or lower your hand</dd></div>
+        <div><dt>E</dt><dd>Reactions</dd></div>
+        <div><dt>C</dt><dd>Messages</dd></div>
+        <div><dt>P</dt><dd>People</dd></div>
+        <div><dt>N</dt><dd>Transcript and AI notes</dd></div>
+        <div><dt>L</dt><dd>Captions</dd></div>
+        <div><dt>B</dt><dd>Backgrounds and effects</dd></div>
+        <div><dt>Esc</dt><dd>Close a panel or unpin a tile</dd></div>
+        <div><dt>?</dt><dd>This list</dd></div>
+      </dl>
+    </div>
+  </dialog>
+
+  <dialog id="confirmDialog" class="dialog dialog-small" aria-labelledby="confirmTitle">
+    <h2 id="confirmTitle"></h2>
+    <p id="confirmBody"></p>
+    <div class="dialog-actions">
+      <button id="confirmCancel" class="btn btn-ghost" type="button" data-dialog-close>Cancel</button>
+      <button id="confirmOk" class="btn btn-primary" type="button">Confirm</button>
+    </div>
+  </dialog>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
 </body>
 </html>

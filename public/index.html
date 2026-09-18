@@ -3,9 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0d1117">
   <title>Peerly - Video calls that just work</title>
-  <meta name="description" content="Free peer-to-peer video calling with screen sharing, chat and more. No account needed.">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f6ef7'/%3E%3Cpath d='M7 11a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3h-8a3 3 0 0 1-3-3V11zm14 3.5 4.2-2.8a1 1 0 0 1 1.55.83v7.94a1 1 0 0 1-1.55.83L21 18.5v-4z' fill='white'/%3E%3C/svg%3E">
+  <meta name="description" content="Free, private, peer-to-peer video meetings with live captions, AI meeting notes, background blur, reactions and private messages. No account needed.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body class="landing-body">
@@ -23,12 +25,12 @@
     <section class="hero">
       <h1>Video calls that<br><span class="accent">just work.</span></h1>
       <p class="hero-sub">
-        Free, private, peer-to-peer video meetings in your browser.
-        No account, no installs, no time limits. Create a room and share the link.
+        Free, private, peer-to-peer meetings in your browser. No account, no installs.
+        Live captions, AI meeting notes, backgrounds and reactions are built in.
       </p>
 
       <div class="landing-actions">
-        <button id="newMeetingBtn" class="btn btn-primary btn-lg">
+        <button id="newMeetingBtn" class="btn btn-primary btn-lg" type="button">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
             <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/>
           </svg>
@@ -48,32 +50,42 @@
       </div>
     </section>
 
-    <section class="features">
-      <div class="feature-card">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg>
-        <h3>Screen sharing</h3>
-        <p>Present a tab, window or your whole screen with one click.</p>
-      </div>
-      <div class="feature-card">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-        <h3>In-call chat</h3>
-        <p>Share links and notes without interrupting the speaker.</p>
-      </div>
+    <section class="features" aria-label="What Peerly can do">
       <div class="feature-card">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
         <h3>Private by design</h3>
-        <p>Media flows directly between participants, encrypted end to end by WebRTC.</p>
+        <p>Audio and video go straight between participants, end-to-end encrypted by WebRTC. The server never sees them.</p>
       </div>
       <div class="feature-card">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
-        <h3>No time limits</h3>
-        <p>Talk as long as you like, with up to 8 people per room.</p>
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/><path d="M18.5 15.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg>
+        <h3>AI meeting notes</h3>
+        <p>Live captions, a searchable transcript, a “catch me up” recap, and notes with decisions and action items when you hang up.</p>
+      </div>
+      <div class="feature-card">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="12" cy="10" r="3"/><path d="M6.5 20a5.5 5.5 0 0 1 11 0"/></svg>
+        <h3>Backgrounds and blur</h3>
+        <p>Blur your room or pick a virtual background. It all runs on your device, so your camera feed isn’t uploaded anywhere.</p>
+      </div>
+      <div class="feature-card">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path d="M8.5 14.5s1.3 1.8 3.5 1.8 3.5-1.8 3.5-1.8"/><path d="M9 9.5v.01M15 9.5v.01"/></svg>
+        <h3>Reactions and chat</h3>
+        <p>Send reactions everyone sees, raise your hand, and message the whole meeting or one person privately.</p>
+      </div>
+      <div class="feature-card">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15"/></svg>
+        <h3>Stays connected</h3>
+        <p>Calls keep running through Wi-Fi drops, page reloads and server updates, and reconnect on their own.</p>
+      </div>
+      <div class="feature-card">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.5l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 17.4 6.2 20.4l1.1-6.5L2.6 9.3l6.5-.9z"/></svg>
+        <h3>Host controls</h3>
+        <p>Ask-to-join waiting room, mute, spotlight, presenting approval, and end the meeting for everyone.</p>
       </div>
     </section>
   </main>
 
   <footer class="landing-footer">
-    <p>Built with WebRTC and Socket.IO</p>
+    <p>Up to 8 people per meeting · Built with WebRTC</p>
   </footer>
 
   <script src="/js/landing.js"></script>
