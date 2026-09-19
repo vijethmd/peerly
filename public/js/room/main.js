@@ -3,7 +3,7 @@
 
 import { $, toast, clearToasts, dismissToast, announce, setIcon, openMenu, openDialog, copyToClipboard, formatDuration } from './ui.js';
 import { installErrorReporting } from './telemetry.js';
-import { loadSession, prefs, rememberRoom } from './session.js';
+import { loadSession, touchSession, prefs, rememberRoom } from './session.js';
 import { BackgroundProcessor } from './effects.js';
 import { LocalMedia } from './media.js';
 import { AudioMonitor } from './audio.js';
@@ -288,6 +288,10 @@ call.on('host-changed', (hostPid) => {
 
 call.on('notice', ({ type, name, message }) => {
   switch (type) {
+    case 'moved':
+      toast('You’re in the meeting on this tab now. Your other tab or window left the call.', { timeout: 6000 });
+      announce('Moved to this tab');
+      break;
     case 'joined':
       toast(`${name} joined`);
       announce(`${name} joined the meeting`);
@@ -573,6 +577,8 @@ function enterCall() {
   announce('You joined the meeting');
 }
 
+let endReason = null;
+
 function endCall({ reason, reportId, by, message }) {
   clearToasts();
   clearInterval(timerInterval);
@@ -591,19 +597,21 @@ function endCall({ reason, reportId, by, message }) {
     left: 'You left the meeting',
     removed: 'You were removed from the meeting',
     ended: 'The meeting has ended',
-    replaced: 'You opened this meeting somewhere else',
+    replaced: 'You’re in this meeting on another tab',
     error: 'You were disconnected'
   };
   const texts = {
     left: 'Thanks for using Peerly.',
     removed: `${by || 'The host'} removed you from this meeting.`,
     ended: `${by || 'The host'} ended the meeting for everyone.`,
-    replaced: 'This meeting is open in another tab or window.',
+    replaced: 'You joined from another tab or window of this browser, so the call moved there. Your seat, name and host role went with you.',
     error: message || 'The connection to the meeting was lost.'
   };
   $('#endedTitle').textContent = titles[reason] || titles.left;
   $('#endedText').textContent = texts[reason] || '';
-  $('#rejoinBtn').hidden = reason === 'removed' || reason === 'replaced';
+  endReason = reason;
+  $('#rejoinBtn').hidden = reason === 'removed';
+  $('#rejoinBtn').textContent = reason === 'replaced' ? 'Use here' : 'Rejoin';
 
   const reportBox = $('#endedReport');
   reportBox.hidden = !reportId;
@@ -709,7 +717,11 @@ $('#cancelKnockBtn').addEventListener('click', () => {
   $('#waiting').hidden = true;
   lobby.show();
 });
-$('#rejoinBtn').addEventListener('click', () => location.reload());
+$('#rejoinBtn').addEventListener('click', () => {
+  // "Use here": rejoin straight away, which moves the seat back to this tab.
+  if (endReason === 'replaced') touchSession(roomId);
+  location.reload();
+});
 
 // ---------------------------------------------------------------- shortcuts
 

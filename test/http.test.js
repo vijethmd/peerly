@@ -32,7 +32,7 @@ describe('HTTP API', () => {
 
   test('room info reflects occupancy and lock state', async () => {
     const empty = await (await fetch(`${s.url}/api/room/qqq-qqqq-qqq`)).json();
-    assert.deepEqual(empty, { valid: true, count: 0, max: 8, full: false, locked: false });
+    assert.deepEqual(empty, { valid: true, count: 0, max: 8, full: false, locked: false, here: false });
     assert.equal((await fetch(`${s.url}/api/room/not-valid`)).status, 400);
 
     const host = await join(s.url, { roomId: 'qqq-qqqq-qqq', name: 'Host' });

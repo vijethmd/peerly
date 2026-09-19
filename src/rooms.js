@@ -159,6 +159,19 @@ class Room {
     return segment;
   }
 
+  /** The seat held by this browser (clientId is shared by its tabs and windows). */
+  seatForClient(clientId) {
+    if (!clientId) return null;
+    for (const p of this.participants.values()) if (p.clientId === clientId) return p;
+    return null;
+  }
+
+  rename(p, name) {
+    p.name = name;
+    const record = this.attendance.get(p.pid);
+    if (record) record.name = name;
+  }
+
   // ---- attendance / timeline ----
   markJoined(p, now) {
     let record = this.attendance.get(p.pid);

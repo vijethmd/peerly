@@ -157,12 +157,17 @@ function createApp({ config, logger, registry, reports, ai, metrics, lifecycle, 
     if (!isRoomId(req.params.id)) return res.status(400).json({ valid: false });
     const room = registry.get(req.params.id);
     const count = room ? room.participants.size : 0;
+    // This browser already has a seat (in another tab): joining moves it here.
+    // The id comes in a header so it never lands in URLs or logs.
+    const client = req.get('x-peerly-client');
+    const here = Boolean(room && isId(client) && room.seatForClient(client));
     return res.json({
       valid: true,
       count,
       max: config.rooms.maxSize,
       full: count >= config.rooms.maxSize,
-      locked: Boolean(room && room.locked)
+      locked: Boolean(room && room.locked),
+      here
     });
   });
 
