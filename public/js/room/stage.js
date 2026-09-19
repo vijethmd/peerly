@@ -15,6 +15,7 @@ export class Stage extends Emitter {
     this.tiles = new Map();
     this.focusedKey = null;
     this.focusAuto = false;
+    this.clickPinnedAt = 0;
     this.filmstrip = null;
     this.dataSaver = false;
     this.pageHidden = false;
@@ -66,6 +67,19 @@ export class Stage extends Emitter {
       h('div', { class: 'tile-avatar' }, avatar),
       h('div', { class: 'tile-placeholder', hidden: true }),
       h('div', { class: 'tile-top' },
+        h('span', { class: 'tile-pinned', hidden: true },
+          h('span', { class: 'tile-pinned-label', html: `${iconHtml('pin', 12)}Pinned` }),
+          h('button', {
+            class: 'tile-unpin',
+            type: 'button',
+            title: 'Unpin',
+            'aria-label': 'Unpin',
+            html: iconHtml('close', 12),
+            onClick: (event) => {
+              event.stopPropagation();
+              this.unpin();
+            }
+          })),
         h('span', { class: 'tile-hand', hidden: true, title: 'Hand raised', html: `${iconHtml('hand', 13)}<b></b>` }),
         h('span', { class: 'tile-rec', hidden: true, title: 'Recording' }, h('i', { class: 'dot' }), 'REC')),
       h('div', { class: 'tile-top-right' },
@@ -77,10 +91,11 @@ export class Stage extends Emitter {
         h('span', { class: 'tile-name', text: participant.name })),
       h('div', { class: 'tile-actions' },
         h('button', {
-          class: 'tile-btn',
+          class: 'tile-btn tile-pin',
           type: 'button',
           title: 'Pin to the main view',
           'aria-label': 'Pin to the main view',
+          'aria-pressed': 'false',
           html: iconHtml('pin', 16),
           onClick: (event) => {
             event.stopPropagation();
@@ -88,7 +103,7 @@ export class Stage extends Emitter {
           }
         }),
         h('button', {
-          class: 'tile-btn',
+          class: 'tile-btn tile-more',
           type: 'button',
           title: 'More options',
           'aria-label': `More options for ${participant.name}`,
@@ -102,7 +117,19 @@ export class Stage extends Emitter {
       h('div', { class: 'tile-reaction', 'aria-hidden': 'true' })
     );
 
-    tile.addEventListener('dblclick', () => this.togglePin(key));
+    tile.addEventListener('dblclick', () => {
+      // The first click of a double-click on a thumbnail already pinned it.
+      if (Date.now() - this.clickPinnedAt < 600) return;
+      this.togglePin(key);
+    });
+    // With someone pinned, clicking a thumbnail pins that tile instead.
+    tile.addEventListener('click', (event) => {
+      if (event.target.closest('button')) return;
+      if (this.focusedKey && this.focusedKey !== key) {
+        this.clickPinnedAt = Date.now();
+        this.focus(key, false);
+      }
+    });
     tile.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
@@ -110,9 +137,10 @@ export class Stage extends Emitter {
       }
     });
 
-    const record = { key, pid, source, isSelf, el: tile, video, avatar };
+    const record = { key, pid, source, isSelf, el: tile, video, avatar, pinBtn: tile.querySelector('.tile-pin') };
     this.tiles.set(key, record);
     (this.focusedKey && this.filmstrip ? this.filmstrip : this.grid).append(tile);
+    this.renderPinState();
     this.layout();
     this.updateViews();
     return record;
@@ -184,6 +212,7 @@ export class Stage extends Emitter {
 
       el.querySelector('.tile-rec').hidden = !participant.recording || record.source === 'screen';
       el.querySelector('.tile-mic').hidden = participant.micOn || record.source === 'screen';
+      if (!participant.micOn) el.classList.remove('speaking');
       paintAvatar(record.avatar, participant.name);
 
       const suffix = record.source === 'screen' ? (isSelf ? ' — your presentation' : '’s presentation') : '';
@@ -255,7 +284,11 @@ export class Stage extends Emitter {
 
   setSpeaking(pid, speaking) {
     const record = this.tiles.get(KEY(pid, 'camera'));
-    if (record) record.el.classList.toggle('speaking', Boolean(speaking));
+    if (!record) return;
+    // A muted mic still hears you (that's how "you're muted" hints work), but
+    // nobody in the meeting does, so don't show it as speaking.
+    const muted = this.getParticipant(pid)?.micOn === false;
+    record.el.classList.toggle('speaking', Boolean(speaking) && !muted);
   }
 
   setLevel(pid, level) {
@@ -279,9 +312,35 @@ export class Stage extends Emitter {
   }
 
   // -------------------------------------------------------------- spotlight
+  // One tile can be in the main view: pinned by this viewer, or put there
+  // automatically while someone presents (focusAuto). Pinning is local.
+  get pinnedKey() {
+    return this.focusAuto ? null : this.focusedKey;
+  }
+
   togglePin(key) {
-    if (this.focusedKey === key) this.unfocus();
+    // Pinning an automatically spotlighted presentation keeps it there.
+    if (this.pinnedKey === key) this.unpin();
     else this.focus(key, false);
+  }
+
+  unpin() {
+    if (this.pinnedKey) this.unfocus();
+  }
+
+  renderPinState() {
+    for (const record of this.tiles.values()) {
+      const pinned = record.key === this.pinnedKey;
+      const label = pinned ? 'Unpin' : 'Pin to the main view';
+      record.el.classList.toggle('pinned', pinned);
+      record.el.querySelector('.tile-pinned').hidden = !pinned;
+      record.pinBtn.classList.toggle('is-pinned', pinned);
+      record.pinBtn.setAttribute('aria-pressed', String(pinned));
+      record.pinBtn.title = label;
+      record.pinBtn.setAttribute('aria-label', label);
+      record.pinBtn.innerHTML = iconHtml(pinned ? 'pinOff' : 'pin', 16);
+      record.el.title = this.focusedKey && !pinned && record.key !== this.focusedKey ? 'Click to pin' : '';
+    }
   }
 
   focus(key, auto = false) {
@@ -298,12 +357,21 @@ export class Stage extends Emitter {
     }
     this.grid.append(this.filmstrip);
     this.grid.style.removeProperty('--tile-w');
+    this.renderPinState();
+    if (!auto) {
+      // A short outline pulse so it's clear what just got pinned.
+      record.el.classList.remove('pin-flash');
+      void record.el.offsetWidth;
+      record.el.classList.add('pin-flash');
+    }
     this.updateViews();
     this.emit('focus-changed', key);
+    if (!auto) this.emit('pin-changed', { pid: record.pid, source: record.source, pinned: true });
   }
 
   unfocus() {
     if (!this.focusedKey) return;
+    const wasPinned = this.tiles.get(this.pinnedKey);
     this.focusedKey = null;
     this.focusAuto = false;
     this.grid.classList.remove('focus-mode');
@@ -312,9 +380,11 @@ export class Stage extends Emitter {
       for (const child of Array.from(this.filmstrip.children)) this.grid.append(child);
       this.filmstrip.remove();
     }
+    this.renderPinState();
     this.layout();
     this.updateViews();
     this.emit('focus-changed', null);
+    if (wasPinned) this.emit('pin-changed', { pid: wasPinned.pid, source: wasPinned.source, pinned: false });
   }
 
   /** Largest 16:9 tiles that fit everyone, like a meeting grid should. */

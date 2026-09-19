@@ -3,10 +3,11 @@
 import { $, h, clear, iconHtml, openMenu, confirmDialog, paintAvatar, toast, pluralize } from './ui.js';
 
 export class PeoplePanel {
-  constructor({ call, onMessagePrivately, onPin }) {
+  constructor({ call, onMessagePrivately, onPin, isPinned }) {
     this.call = call;
     this.onMessagePrivately = onMessagePrivately;
     this.onPin = onPin;
+    this.isPinned = isPinned;
     this.panel = $('#peoplePanel');
     this.list = $('#peopleList');
     this.count = $('#peopleCount');
@@ -130,7 +131,8 @@ export class PeoplePanel {
     const canDm = call.settings.privateChat || isHost;
     const items = [];
 
-    items.push({ label: 'Pin to the main view', icon: 'pin', onSelect: () => this.onPin?.(participant.pid) });
+    const pinned = Boolean(this.isPinned?.(participant.pid));
+    items.push({ label: pinned ? 'Unpin' : 'Pin to the main view', icon: pinned ? 'pinOff' : 'pin', onSelect: () => this.onPin?.(participant.pid) });
     if (!isSelf && canDm) {
       items.push({ label: 'Send a private message', icon: 'chat', onSelect: () => this.onMessagePrivately?.(participant.pid) });
     }

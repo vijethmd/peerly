@@ -100,6 +100,7 @@
   border: 1px solid var(--line);
   min-width: 0;
   cursor: pointer;
+  touch-action: manipulation; /* double-tap pins instead of zooming */
   animation: tile-in 0.45s var(--ease-out);
   transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
 }
@@ -258,6 +259,48 @@
   transition: background-color 0.2s var(--ease), color 0.2s var(--ease), border-color 0.2s var(--ease);
 }
 .tile-btn:hover { background: #fff; border-color: #fff; color: #0a0a0a; }
+.tile-btn.is-pinned { background: #fff; border-color: #fff; color: #0a0a0a; }
+.tile-btn.is-pinned:hover { background: #d9d9d9; border-color: #d9d9d9; }
+
+/* pinned: white outline, a badge with its own unpin button, and a pulse when pinned */
+.tile.pinned { border-color: #fff; box-shadow: 0 0 0 1px #fff; }
+.tile.pinned.speaking {
+  border-color: var(--mint);
+  box-shadow: 0 0 0 1px var(--mint), 0 0 calc(10px + var(--level, 0) * 24px) rgba(30, 254, 157, 0.22);
+}
+.tile.pin-flash { animation: pin-flash 0.9s var(--ease-out); }
+@keyframes pin-flash {
+  0% { box-shadow: 0 0 0 1px #fff, 0 0 0 0 rgba(155, 82, 251, 0.75); transform: scale(0.992); }
+  45% { box-shadow: 0 0 0 1px #fff, 0 0 0 12px rgba(155, 82, 251, 0); transform: none; }
+  100% { box-shadow: 0 0 0 1px #fff, 0 0 0 0 rgba(155, 82, 251, 0); }
+}
+.tile-pinned {
+  display: inline-flex;
+  align-items: stretch;
+  height: 24px;
+  background: #fff;
+  color: #0a0a0a;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  animation: pop-in 0.35s var(--ease-out);
+}
+.tile-pinned-label { display: inline-flex; align-items: center; gap: 5px; padding: 0 8px; }
+.tile-pinned-label svg path:first-child { fill: currentColor; }
+.tile-unpin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  border: none;
+  border-left: 1px solid rgba(0, 0, 0, 0.18);
+  background: transparent;
+  color: #0a0a0a;
+  transition: background-color 0.2s var(--ease);
+}
+.tile-unpin:hover { background: #d9d9d9; }
 
 .tile-reaction {
   position: absolute;
@@ -308,7 +351,12 @@
 .filmstrip .tile { width: 168px; flex: none; }
 .filmstrip .tile .tile-label { height: 20px; padding: 0 6px; font-size: 10.5px; left: 5px; bottom: 5px; }
 .filmstrip .tile .tile-hand b, .filmstrip .tile .tile-status { display: none; }
-.filmstrip .tile .tile-actions { display: none; }
+/* thumbnails: hover shows a compact pin button; clicking one pins it */
+.filmstrip .tile:hover { border-color: #fff; }
+.filmstrip .tile .tile-actions { right: 5px; bottom: 5px; }
+.filmstrip .tile .tile-more { display: none; }
+.filmstrip .tile .tile-btn { width: 24px; height: 24px; }
+.filmstrip .tile .tile-btn svg { width: 13px; height: 13px; }
 
 /* ----------------------------------------------------------- reactions -- */
 
@@ -417,6 +465,10 @@
   flex: none;
 }
 .caption-text { color: #fff; }
+.caption-status .caption-text { color: var(--text-dim); font-size: 0.85em; }
+.caption-status-info { border-left-color: var(--accent); }
+.caption-status-warn { border-left-color: var(--warn); }
+.caption-status-warn .caption-name { color: var(--warn); }
 
 /* ------------------------------------------------------------ controls -- */
 

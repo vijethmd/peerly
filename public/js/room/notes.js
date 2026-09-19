@@ -33,12 +33,17 @@ export class Notes {
     this.lastInterimAt = 0;
     this.problem = null;
     this.unread = 0;
+    // Is my own speech turning into text? (see captionStatus)
+    this.speakingSince = 0;
+    this.spokeMs = 0;
+    this.status = null;
+    this.lastMode = null;
 
     this.engine = new SpeechEngine({
       onInterim: (text) => this.onLocalInterim(text),
       onFinal: (text) => this.onLocalFinal(text),
       onProblem: (kind) => this.onSpeechProblem(kind),
-      onMode: () => this.render()
+      onMode: (mode) => this.onSpeechMode(mode)
     });
   }
 
@@ -96,16 +101,76 @@ export class Notes {
     this.engine.update({ shouldRun, lang: this.language(), track: this.call.media.micTrack });
   }
 
+  onSpeechMode(mode) {
+    if (mode === 'device' && this.lastMode === 'cloud' && this.call.transcription.on) {
+      toast('Captions are ready: you’re now transcribed on this device.', { id: 'speech-mode', timeout: 3500 });
+    }
+    this.lastMode = mode;
+    this.updateStatus();
+    this.render();
+  }
+
+  /** From the audio monitor: whether my microphone hears me talking. */
+  onSelfSpeaking(speaking) {
+    if (speaking) {
+      this.speakingSince ||= Date.now();
+    } else if (this.speakingSince) {
+      this.spokeMs += Date.now() - this.speakingSince;
+      this.speakingSince = 0;
+    }
+  }
+
+  prepareSpeech() {
+    this.engine.prepare(this.language());
+  }
+
+  /**
+   * A line above the captions when my speech isn't being captioned: while
+   * on-device recognition is being set up, when the browser's recognizer
+   * reports a problem, or when I've talked for a while and got no text back.
+   */
+  captionStatus() {
+    const { transcription, media } = this.call;
+    if (!transcription.on || !media.micOn || this.call.phase !== 'call') return null;
+    if (!speechSupported) return { tone: 'warn', text: 'This browser can’t turn speech into text, so what you say isn’t captioned. Chrome on a computer works best.' };
+    if (this.problem === 'blocked') return { tone: 'warn', text: 'Your browser blocked speech recognition, so what you say isn’t captioned.' };
+    if (this.problem === 'language') return { tone: 'warn', text: 'Your browser can’t transcribe this language.' };
+    if (this.problem) return { tone: 'warn', text: `Captions can’t hear you right now (${this.problem}). Chrome on a computer works best.` };
+    if (this.engine.mode === 'cloud' && this.engine.installingOnDevice) {
+      return { tone: 'info', text: 'Setting up captions on this device. The first time takes about a minute.' };
+    }
+    const spoke = this.spokeMs + (this.speakingSince ? Date.now() - this.speakingSince : 0);
+    if (spoke > 12000) return { tone: 'warn', text: 'Your browser isn’t turning your speech into text. Chrome on a computer works best.' };
+    return null;
+  }
+
+  updateStatus() {
+    const next = this.captionStatus();
+    if ((next?.text || '') === (this.status?.text || '')) return;
+    this.status = next;
+    this.renderCaptions();
+    this.render();
+  }
+
   onSpeechProblem(kind) {
     this.problem = kind;
+    this.updateStatus();
     this.render();
     if (kind === 'blocked') {
       toast('Your browser blocked speech recognition, so your speech isn’t transcribed.', { tone: 'error' });
     }
   }
 
+  heardMe() {
+    // Text came back, so recognition works: restart the "no text" clock.
+    this.spokeMs = 0;
+    if (this.speakingSince) this.speakingSince = Date.now();
+    if (this.status) this.updateStatus();
+  }
+
   onLocalInterim(text) {
     const now = Date.now();
+    if (text) this.heardMe();
     this.showCaption({ pid: this.call.self.pid, name: this.call.name, text, interim: true, isSelf: true });
     if (!text) return;
     if (text === this.lastInterim) return;
@@ -116,6 +181,7 @@ export class Notes {
   }
 
   onLocalFinal(text) {
+    this.heardMe();
     this.lastInterim = '';
     this.showCaption({ pid: this.call.self.pid, name: this.call.name, text, interim: false, isSelf: true });
     this.call.sendCaption(text, true);
@@ -149,6 +215,7 @@ export class Notes {
   }
 
   pruneCaptions() {
+    this.updateStatus();
     const now = Date.now();
     let changed = false;
     for (const [pid, entry] of this.captions) {
@@ -164,13 +231,23 @@ export class Notes {
     const entries = [...this.captions.entries()]
       .sort((a, b) => a[1].updatedAt - b[1].updatedAt)
       .slice(-CAPTION_LINES);
-    if (!this.captionsOn || !entries.length) {
+    if (!this.captionsOn || (!entries.length && !this.status)) {
       this.captionsEl.hidden = true;
       document.body.classList.remove('has-captions');
       clear(this.captionsEl);
       return;
     }
     clear(this.captionsEl);
+    if (this.status) {
+      this.captionsEl.append(
+        h(
+          'p',
+          { class: `caption-line caption-status caption-status-${this.status.tone}`, role: 'status' },
+          h('span', { class: 'caption-name', text: 'Captions' }),
+          h('span', { class: 'caption-text', text: this.status.text })
+        )
+      );
+    }
     for (const [, entry] of entries) {
       const text = `${entry.final} ${entry.interim}`.trim();
       if (!text) continue;
@@ -375,6 +452,8 @@ export class Notes {
         this.statusCard.append(h('p', { class: 'notes-warning', text: 'Your browser blocked speech recognition for this page.' }));
       } else if (this.problem === 'language') {
         this.statusCard.append(h('p', { class: 'notes-warning', text: 'That language isn’t supported by your browser’s speech recognition.' }));
+      } else if (this.status?.tone === 'warn') {
+        this.statusCard.append(h('p', { class: 'notes-warning', text: this.status.text }));
       }
     } else {
       this.statusCard.append(
