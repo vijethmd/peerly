@@ -742,7 +742,14 @@ function createSignaling({ io, config, logger, registry, reports, ai, metrics, t
       const lastSegmentId = room.transcript[room.transcript.length - 1].id;
       const toReply = (result, cached) =>
         result.ok
-          ? { ok: true, recap: result.data, partial: Boolean(result.partial), generatedAt: result.generatedAt, cached }
+          ? {
+              ok: true,
+              recap: result.data,
+              kind: result.kind || 'ai',
+              partial: Boolean(result.partial),
+              generatedAt: result.generatedAt,
+              cached
+            }
           : { ok: false, code: result.code, error: result.error };
 
       // Nothing new was said since the last recap: reuse it.

@@ -39,7 +39,7 @@ export class PeoplePanel {
     $('#endForAllBtn').addEventListener('click', async () => {
       const ok = await confirmDialog({
         title: 'End the meeting for everyone?',
-        body: 'Everyone will be removed from the call. If AI notes are on, they will be generated now.',
+        body: 'Everyone will be removed from the call. If the transcript is on, the notes are written now.',
         confirmLabel: 'End meeting',
         danger: true
       });

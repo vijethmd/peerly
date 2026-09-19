@@ -1,4 +1,4 @@
-// Live captions, the running transcript, and AI notes ("catch me up" plus
+// Live captions, the running transcript, and meeting notes ("catch me up" plus
 // the link to the meeting report).
 
 import { $, h, clear, toast, formatClock, formatRelative } from './ui.js';
@@ -37,7 +37,8 @@ export class Notes {
     this.engine = new SpeechEngine({
       onInterim: (text) => this.onLocalInterim(text),
       onFinal: (text) => this.onLocalFinal(text),
-      onProblem: (kind) => this.onSpeechProblem(kind)
+      onProblem: (kind) => this.onSpeechProblem(kind),
+      onMode: () => this.render()
     });
   }
 
@@ -58,7 +59,7 @@ export class Notes {
     this.call.on('host-changed', () => this.render());
     this.call.on('transcription-request', ({ name }) => {
       if (!this.call.isHost()) return;
-      toast(`${name} asked to turn on captions and AI notes`, {
+      toast(`${name} asked to turn on captions and notes`, {
         timeout: 20000,
         actions: [
           {
@@ -194,7 +195,7 @@ export class Notes {
         const result = await this.call.requestTranscription();
         toast(
           result.ok
-            ? 'Asked the host to turn on captions and AI notes'
+            ? 'Asked the host to turn on captions and notes'
             : result.error || 'Could not ask the host right now.',
           { tone: result.ok ? 'info' : 'error' }
         );
@@ -273,7 +274,7 @@ export class Notes {
     setTimeout(() => URL.revokeObjectURL(url), 10000);
   }
 
-  // -------------------------------------------------------------- AI notes
+  // ----------------------------------------------------------- catch me up
   async catchUp() {
     this.catchUpBtn.disabled = true;
     this.catchUpBtn.textContent = 'Catching you up…';
@@ -302,7 +303,21 @@ export class Notes {
     }
     const meta = [result.cached ? `generated ${formatRelative(result.generatedAt || Date.now())}` : 'just generated'];
     if (result.partial) meta.push('covers the most recent part of the meeting');
-    this.catchUpResult.append(h('p', { class: 'recap-meta', text: `AI summary — ${meta.join(' · ')}` }));
+    const label = result.kind === 'auto' ? 'Automatic summary' : 'AI summary';
+    this.catchUpResult.append(h('p', { class: 'recap-meta', text: `${label} — ${meta.join(' · ')}` }));
+  }
+
+  /** Where this person's speech is being turned into text, in plain words. */
+  speechModeText() {
+    if (!speechSupported || !this.call.media.micOn) return '';
+    const { mode, installingOnDevice } = this.engine;
+    if (mode === 'device') return 'You’re transcribed on this device: your audio doesn’t leave it.';
+    if (mode === 'cloud') {
+      return installingOnDevice
+        ? 'Setting up on-device transcription. Until it’s ready, your browser’s online speech service transcribes you.'
+        : 'Your browser’s online speech service transcribes you.';
+    }
+    return '';
   }
 
   // ---------------------------------------------------------------- render
@@ -316,7 +331,7 @@ export class Notes {
       ? this.captionsOn
         ? 'Hide captions (L)'
         : 'Show captions (L)'
-      : 'Turn on captions and AI notes (L)';
+      : 'Turn on captions and notes (L)';
 
     clear(this.statusCard);
     if (transcription.on) {
@@ -324,9 +339,11 @@ export class Notes {
         h('div', { class: 'notes-live' }, h('span', { class: 'dot' }), h('strong', { text: 'Transcribing this meeting' })),
         h('p', {
           class: 'notes-hint',
-          text: `Started by ${transcription.startedBy || 'the host'}. Each person’s browser turns their own speech into text (Chrome and Edge use their online speech service for this); Peerly only receives the text.`
+          text: `Started by ${transcription.startedBy || 'the host'}. Each person’s browser turns their own speech into text and Peerly only receives the text.`
         })
       );
+      const mode = this.speechModeText();
+      if (mode) this.statusCard.append(h('p', { class: 'notes-hint notes-mode', text: mode }));
       const controls = h('div', { class: 'notes-actions' });
       controls.append(
         h('button', {
@@ -361,12 +378,14 @@ export class Notes {
       }
     } else {
       this.statusCard.append(
-        h('h3', { class: 'notes-title', text: 'Transcript and AI notes' }),
+        h('h3', { class: 'notes-title', text: 'Transcript and notes' }),
         h('p', {
           class: 'notes-hint',
-          text: call.features.ai
-            ? 'Turn this on to show live captions, keep a transcript, and get AI meeting notes with decisions and action items when the meeting ends.'
-            : 'Turn this on for live captions and a transcript of the meeting.'
+          text: !call.features.ai
+            ? 'Turn this on for live captions and a transcript of the meeting.'
+            : call.features.notes === 'auto'
+              ? 'Turn this on to show live captions, keep a transcript, and get meeting notes with key points, decisions and action items when the meeting ends.'
+              : 'Turn this on to show live captions, keep a transcript, and get AI meeting notes with decisions and action items when the meeting ends.'
         })
       );
       if (isHost) {

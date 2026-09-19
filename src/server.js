@@ -158,7 +158,7 @@ async function start() {
     logger.info('Peerly is running', {
       url: `http://localhost:${address.port}`,
       env: config.nodeEnv,
-      ai: config.ai.enabled ? config.ai.model : 'disabled'
+      notes: config.ai.enabled ? `${config.ai.provider} (${config.ai.model})` : 'off'
     });
   } catch (err) {
     logger.error('failed to start', { err });
@@ -168,7 +168,9 @@ async function start() {
   if (config.sessionSecretIsEphemeral) {
     logger.warn('SESSION_SECRET is not set: calls can’t resume across server restarts. Set it to a random string of 32+ characters.');
   }
-  if (!config.ai.enabled) logger.info('AI meeting notes are off. Set ANTHROPIC_API_KEY to turn them on.');
+  if (config.ai.provider === 'local') {
+    logger.info('Meeting notes use Peerly’s built-in summarizer. Set GROQ_API_KEY (free tier) for AI-written notes.');
+  }
 }
 
 module.exports = { createPeerly, start };
