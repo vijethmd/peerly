@@ -44,7 +44,7 @@ function generateRoomId() {
 // Report links are bearer secrets; keep them out of logs.
 const redactPath = (p) => p.replace(/^\/(api\/)?report\/[^/]+/, (match, api) => `/${api || ''}report/:id`);
 
-function createApp({ config, logger, registry, reports, ai, metrics, lifecycle, onBeaconLeave }) {
+function createApp({ config, logger, registry, reports, ai, metrics, lifecycle, onBeaconLeave, onTranscribe }) {
   const log = logger.child({ component: 'http' });
   const app = express();
   const limiters = [];
@@ -197,6 +197,26 @@ function createApp({ config, logger, registry, reports, ai, metrics, lifecycle, 
     onBeaconLeave(req.body && typeof req.body === 'object' ? req.body : {});
     res.status(204).end();
   });
+
+  // A clip of one person's speech: 16 kHz mono 16-bit PCM, at most ~30 s.
+  // Who is speaking is proven with their signed resume token (headers only).
+  api.post(
+    '/transcribe',
+    perIp(90, 60),
+    express.raw({ type: (req) => /^audio\/l16\b/i.test(req.headers['content-type'] || ''), limit: '1100kb' }),
+    async (req, res) => {
+      const result = await onTranscribe(
+        {
+          roomId: req.get('x-peerly-room'),
+          pid: req.get('x-peerly-pid'),
+          token: req.get('x-peerly-token'),
+          ageMs: Number(req.get('x-peerly-age'))
+        },
+        Buffer.isBuffer(req.body) ? req.body : null
+      );
+      res.status(result.status).set('Cache-Control', 'no-store').json(result.body);
+    }
+  );
 
   api.post('/client-errors', perIp(20, 10), express.json({ limit: '16kb' }), (req, res) => {
     const body = req.body && typeof req.body === 'object' ? req.body : {};

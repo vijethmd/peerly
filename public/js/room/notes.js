@@ -4,6 +4,7 @@
 import { $, h, clear, toast, formatClock, formatRelative } from './ui.js';
 import { prefs } from './session.js';
 import { SpeechEngine, SPEECH_LANGUAGES, speechSupported, defaultLanguage } from './speech.js';
+import { VoiceClipper, clipperSupported } from './voice.js';
 
 const CAPTION_LINES = 3;
 const CAPTION_TTL_MS = 7000;
@@ -45,6 +46,19 @@ export class Notes {
       onProblem: (kind) => this.onSpeechProblem(kind),
       onMode: (mode) => this.onSpeechMode(mode)
     });
+    // Server transcription: clips of my speech go to the server for Whisper.
+    this.clipper = new VoiceClipper({ onClip: (clip) => this.sendClip(clip) });
+    this.serverFallback = false;
+    this.clipFailures = 0;
+  }
+
+  /**
+   * Whether the server transcribes my speech (Whisper on clips). Then the
+   * browser's own recognizer only drives instant captions and the server's
+   * text is what goes in the transcript.
+   */
+  get serverMode() {
+    return this.call.features.transcriber === 'server' && clipperSupported && !this.serverFallback;
   }
 
   init() {
@@ -99,6 +113,44 @@ export class Notes {
   updateEngine() {
     const shouldRun = Boolean(this.call.transcription.on) && this.call.media.micOn && this.call.phase === 'call';
     this.engine.update({ shouldRun, lang: this.language(), track: this.call.media.micTrack });
+    this.clipper.update({ shouldRun: shouldRun && this.serverMode, track: this.call.media.micTrack });
+  }
+
+  async sendClip(clip, attempt = 1) {
+    const result = await this.call.uploadClip(clip.pcm, clip.ageMs);
+    if (result.ok) {
+      this.clipFailures = 0;
+      return;
+    }
+    if (['off', 'forbidden', 'transcription-off'].includes(result.code) || result.status === 404) {
+      // The server can't transcribe (not set up, or it went away): my
+      // browser's recognizer writes the transcript again.
+      if (result.code !== 'transcription-off' && !this.serverFallback) {
+        this.serverFallback = true;
+        this.updateEngine();
+        this.render();
+      }
+      return;
+    }
+    if (attempt < 2 && (result.code === 'network' || result.status >= 500)) {
+      setTimeout(() => this.sendClip({ ...clip, ageMs: clip.ageMs + 3000 }, attempt + 1), 3000);
+      return;
+    }
+    // The server keeps failing (say the free tier's daily quota ran out): my
+    // browser transcribes me for a while, then the server gets another try.
+    this.clipFailures += 1;
+    if (this.clipFailures >= 3 && !this.serverFallback) {
+      this.serverFallback = true;
+      this.updateEngine();
+      this.render();
+      clearTimeout(this.fallbackTimer);
+      this.fallbackTimer = setTimeout(() => {
+        this.serverFallback = false;
+        this.clipFailures = 0;
+        this.updateEngine();
+        this.render();
+      }, 5 * 60000);
+    }
   }
 
   onSpeechMode(mode) {
@@ -132,6 +184,11 @@ export class Notes {
   captionStatus() {
     const { transcription, media } = this.call;
     if (!transcription.on || !media.micOn || this.call.phase !== 'call') return null;
+    const spoke = this.spokeMs + (this.speakingSince ? Date.now() - this.speakingSince : 0);
+    if (this.serverMode) {
+      // Whisper text arrives a few seconds after each pause.
+      return spoke > 25000 ? { tone: 'warn', text: 'Your speech isn’t reaching the transcript. Check your connection.' } : null;
+    }
     if (!speechSupported) return { tone: 'warn', text: 'This browser can’t turn speech into text, so what you say isn’t captioned. Chrome on a computer works best.' };
     if (this.problem === 'blocked') return { tone: 'warn', text: 'Your browser blocked speech recognition, so what you say isn’t captioned.' };
     if (this.problem === 'language') return { tone: 'warn', text: 'Your browser can’t transcribe this language.' };
@@ -139,7 +196,6 @@ export class Notes {
     if (this.engine.mode === 'cloud' && this.engine.installingOnDevice) {
       return { tone: 'info', text: 'Setting up captions on this device. The first time takes about a minute.' };
     }
-    const spoke = this.spokeMs + (this.speakingSince ? Date.now() - this.speakingSince : 0);
     if (spoke > 12000) return { tone: 'warn', text: 'Your browser isn’t turning your speech into text. Chrome on a computer works best.' };
     return null;
   }
@@ -170,7 +226,7 @@ export class Notes {
 
   onLocalInterim(text) {
     const now = Date.now();
-    if (text) this.heardMe();
+    if (text && !this.serverMode) this.heardMe();
     this.showCaption({ pid: this.call.self.pid, name: this.call.name, text, interim: true, isSelf: true });
     if (!text) return;
     if (text === this.lastInterim) return;
@@ -181,8 +237,14 @@ export class Notes {
   }
 
   onLocalFinal(text) {
-    this.heardMe();
     this.lastInterim = '';
+    if (this.serverMode) {
+      // An instant caption only; the server's Whisper text is the transcript.
+      this.showCaption({ pid: this.call.self.pid, name: this.call.name, text, interim: true, isSelf: true });
+      this.call.sendCaption(text, false);
+      return;
+    }
+    this.heardMe();
     this.showCaption({ pid: this.call.self.pid, name: this.call.name, text, interim: false, isSelf: true });
     this.call.sendCaption(text, true);
   }
@@ -192,7 +254,9 @@ export class Notes {
     const isSelf = payload.pid === this.call.self.pid;
     if (payload.final) {
       this.addSegment(payload);
-      if (!isSelf) this.showCaption({ ...payload, interim: false });
+      const fromServer = payload.source === 'server';
+      if (isSelf && fromServer) this.heardMe();
+      if (!isSelf || fromServer) this.showCaption({ ...payload, interim: false, isSelf });
     } else if (!isSelf) {
       this.showCaption({ ...payload, interim: true });
     }
@@ -386,7 +450,9 @@ export class Notes {
 
   /** Where this person's speech is being turned into text, in plain words. */
   speechModeText() {
-    if (!speechSupported || !this.call.media.micOn) return '';
+    if (!this.call.media.micOn) return '';
+    if (this.serverMode) return 'Short clips of your speech go to Peerly’s server, which turns them into text with Whisper. Audio isn’t kept.';
+    if (!speechSupported) return '';
     const { mode, installingOnDevice } = this.engine;
     if (mode === 'device') return 'You’re transcribed on this device: your audio doesn’t leave it.';
     if (mode === 'cloud') {
@@ -416,7 +482,9 @@ export class Notes {
         h('div', { class: 'notes-live' }, h('span', { class: 'dot' }), h('strong', { text: 'Transcribing this meeting' })),
         h('p', {
           class: 'notes-hint',
-          text: `Started by ${transcription.startedBy || 'the host'}. Each person’s browser turns their own speech into text and Peerly only receives the text.`
+          text: this.serverMode
+            ? `Started by ${transcription.startedBy || 'the host'}. Everyone is transcribed, on any browser or phone.`
+            : `Started by ${transcription.startedBy || 'the host'}. Each person’s browser turns their own speech into text and Peerly only receives the text.`
         })
       );
       const mode = this.speechModeText();
@@ -441,7 +509,9 @@ export class Notes {
         );
       }
       this.statusCard.append(controls, this.languageField());
-      if (!speechSupported) {
+      if (this.serverMode) {
+        if (this.status?.tone === 'warn') this.statusCard.append(h('p', { class: 'notes-warning', text: this.status.text }));
+      } else if (!speechSupported) {
         this.statusCard.append(
           h('p', {
             class: 'notes-warning',

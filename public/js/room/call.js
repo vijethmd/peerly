@@ -594,6 +594,28 @@ export class CallController extends Emitter {
     this.conn?.send('reaction', { emoji });
   }
 
+  /** Uploads a clip of my speech for server-side transcription. */
+  async uploadClip(pcm, ageMs) {
+    if (!this.self.pid || !this.self.token || this.phase !== 'call') return { ok: false, code: 'not-in-call' };
+    try {
+      const response = await fetch('/api/transcribe', {
+        method: 'POST',
+        headers: {
+          'content-type': 'audio/L16; rate=16000; channels=1',
+          'x-peerly-room': this.roomId,
+          'x-peerly-pid': this.self.pid,
+          'x-peerly-token': this.self.token,
+          'x-peerly-age': String(Math.round(ageMs))
+        },
+        body: pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength)
+      });
+      const body = await response.json().catch(() => ({}));
+      return { ...body, status: response.status, ok: response.ok && body.ok !== false };
+    } catch {
+      return { ok: false, code: 'network' };
+    }
+  }
+
   sendCaption(text, final) {
     this.conn?.send('caption', { text, final });
   }

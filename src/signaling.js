@@ -74,11 +74,13 @@ function isOriginAllowed(req, allowedOrigins) {
   }
 }
 
-function createSignaling({ io, config, logger, registry, reports, ai, metrics, tokens, lifecycle }) {
+function createSignaling({ io, config, logger, registry, reports, ai, transcriber, metrics, tokens, lifecycle }) {
   const log = logger.child({ component: 'signaling' });
   const ipConnections = new Map();
   const recapByParticipant = new KeyedRateLimiter({ capacity: 1, refillPerSecond: 1 / 30 });
   const recapByRoom = new KeyedRateLimiter({ capacity: 10, refillPerSecond: 10 / 3600 });
+  // Speech clips: browsers send one every few seconds while someone talks.
+  const clipsByParticipant = new KeyedRateLimiter({ capacity: 6, refillPerSecond: 0.5 });
 
   const socketOf = (p) => (p && p.socketId ? io.sockets.sockets.get(p.socketId) : undefined);
   const emitTo = (p, event, payload) => {
@@ -750,7 +752,7 @@ function createSignaling({ io, config, logger, registry, reports, ai, metrics, t
             : 'Catch me up needs transcription. Ask the host to turn it on.'
         });
       }
-      const lastSegmentId = room.transcript[room.transcript.length - 1].id;
+      const lastSegmentId = room.lastTranscriptId;
       const toReply = (result, cached) =>
         result.ok
           ? {
@@ -838,6 +840,7 @@ function createSignaling({ io, config, logger, registry, reports, ai, metrics, t
     const now = Date.now();
     recapByParticipant.prune(now);
     recapByRoom.prune(now);
+    clipsByParticipant.prune(now);
     reports.sweep(now);
     for (const room of registry.values()) {
       for (const [ticket, expiresAt] of room.tickets) if (expiresAt <= now) room.tickets.delete(ticket);
@@ -867,6 +870,43 @@ function createSignaling({ io, config, logger, registry, reports, ai, metrics, t
     return true;
   }
 
+  /**
+   * A clip of one participant's speech from their browser: transcribed by
+   * Whisper and added to the transcript as their words. Works for every
+   * browser, including ones with no speech recognition of their own.
+   */
+  async function transcribeClip({ roomId, pid, token, ageMs }, pcm) {
+    const fail = (status, code, error) => ({ status, body: { ok: false, code, error } });
+    if (!transcriber?.enabled) return fail(404, 'off', 'Server transcription isn’t set up.');
+    if (!isRoomId(roomId) || !isId(pid) || !tokens.verifyResumeToken(roomId, pid, token)) return fail(403, 'forbidden', 'Not allowed.');
+    const room = registry.get(roomId);
+    const p = room && room.participants.get(pid);
+    if (!p) return fail(404, 'gone', 'You’re not in this meeting.');
+    if (!room.transcription) return fail(409, 'transcription-off', 'Transcription is off.');
+    if (!pcm || pcm.length < 3200 || pcm.length % 2) return fail(400, 'invalid', 'That audio clip isn’t valid.');
+    if (!clipsByParticipant.take(`${roomId}:${pid}`)) return fail(429, 'rate-limited', 'Too many clips.');
+
+    // ageMs: how long ago (on the sender's clock) the clip's speech began.
+    const durationMs = Math.round((pcm.length / 2 / 16000) * 1000);
+    const ts = Date.now() - (Number.isFinite(ageMs) ? Math.min(Math.max(ageMs, 0), 120000) : durationMs);
+    const language = (room.transcription.lang || '').split('-')[0].toLowerCase() || null;
+    // Names help Whisper spell the people being talked to and about.
+    const names = [...room.participants.values()].map((q) => q.name).join(', ');
+    const result = await transcriber.submit({ key: `${roomId}:${pid}`, pcm, language, prompt: `Meeting with ${names}.`.slice(0, 400) });
+    if (!result.ok) return fail(result.code === 'off' ? 404 : 503, result.code, result.error);
+    if (!result.text) return { status: 200, body: { ok: true, text: '' } };
+
+    // The meeting may have moved on while Whisper was working.
+    const seat = registry.get(roomId) === room ? room.participants.get(pid) : null;
+    if (!seat || !room.transcription) return { status: 200, body: { ok: true, text: '', dropped: true } };
+    const text = sanitizeLine(result.text, 1000);
+    if (!text) return { status: 200, body: { ok: true, text: '' } };
+    const segment = room.appendTranscript({ pid, name: seat.name, text, ts });
+    if (!segment) return fail(200, 'transcript-full', 'The transcript reached its size limit.');
+    io.to(room.id).emit('caption', { ...segment, final: true, source: 'server' });
+    return { status: 200, body: { ok: true, text, id: segment.id } };
+  }
+
   function stop() {
     clearInterval(maintenance);
     for (const room of registry.values()) {
@@ -876,7 +916,7 @@ function createSignaling({ io, config, logger, registry, reports, ai, metrics, t
     }
   }
 
-  return { beaconLeave, stop, connectionsByIp: ipConnections };
+  return { beaconLeave, transcribeClip, stop, connectionsByIp: ipConnections };
 }
 
 module.exports = { createSignaling, clientIp, isOriginAllowed, EVENT_LIMITS };
