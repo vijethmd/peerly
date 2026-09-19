@@ -94,6 +94,12 @@ export function saveSession(roomId, data) {
   writeJson(session, sessionKey(roomId), { ...data, savedAt: Date.now() });
 }
 
+/** Marks the saved call as current again, so the next load rejoins directly. */
+export function touchSession(roomId) {
+  const stored = loadSession(roomId);
+  if (stored) saveSession(roomId, { ...stored, inCall: true });
+}
+
 export function clearSession(roomId) {
   try {
     session?.removeItem(sessionKey(roomId));

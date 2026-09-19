@@ -66,6 +66,11 @@ export class CallController extends Emitter {
       if (this.phase === 'call') this.conn?.send('state', { sharing: false });
       this.emit('self-updated');
     });
+    // Keep the saved mic/camera state current, so a reload or "Use here"
+    // comes back the way you were.
+    this.media.addEventListener('state', () => {
+      if (this.phase === 'call') this.persistSession();
+    });
 
     window.addEventListener('online', () => this.conn?.reconnect());
     window.addEventListener('offline', () => this.setConnectionState('offline'));
@@ -256,6 +261,7 @@ export class CallController extends Emitter {
       this.hasJoinedOnce = true;
       this.setPhase('call');
       this.emit('joined', result);
+      if (result.moved) this.emit('notice', { type: 'moved' });
       clearInterval(this.syncTimer);
       this.syncTimer = setInterval(() => this.sync(), SYNC_INTERVAL_MS);
       clearInterval(this.sessionTimer);
@@ -486,7 +492,8 @@ export class CallController extends Emitter {
         this.end('ended', { by: payload.by, reportId: payload.reportId });
         break;
       case 'session-replaced':
-        this.end('replaced');
+        // This seat was opened in another tab or window of this browser.
+        this.end('replaced', { moved: Boolean(payload?.moved) });
         break;
       case 'server-shutdown':
         this.emit('server-restarting', payload);
@@ -663,6 +670,9 @@ export class CallController extends Emitter {
 
   end(reason, extra = {}) {
     if (this.phase === 'ended') return;
+    // Taken over by another tab: save how this tab was set up before its
+    // media stops, for "Use here".
+    if (reason === 'replaced') this.persistSession();
     const reportId = extra.reportId || this.transcription.reportId || null;
     this.setPhase('ended');
     clearTimeout(this.joinRetryTimer);
@@ -674,7 +684,9 @@ export class CallController extends Emitter {
     this.conn?.close();
     this.conn = null;
     this.media.stopAll();
-    clearSession(this.roomId);
+    // A tab that another tab took over keeps its session, so "Use here" can
+    // move the seat back with one click.
+    if (reason !== 'replaced') clearSession(this.roomId);
     this.emit('ended', { reason, reportId, ...extra });
   }
 }

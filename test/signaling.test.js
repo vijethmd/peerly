@@ -253,6 +253,62 @@ describe('reconnection', () => {
     assert.equal(second.ack.resumed, true);
   });
 
+  test('a second tab of the same browser takes over the seat instead of joining as someone new', async () => {
+    const { url } = await server();
+    const device = clientId();
+    const alice = await join(url, { name: 'Alice', clientId: device });
+    const bob = await join(url, { name: 'Bob' });
+    track(alice.socket, bob.socket);
+
+    const replaced = waitFor(alice.socket, 'session-replaced');
+    const resumedForBob = waitFor(bob.socket, 'peer-resumed');
+    const secondTab = await join(url, { name: 'Alice', clientId: device, micOn: false });
+    track(secondTab.socket);
+
+    assert.equal(secondTab.ack.ok, true);
+    assert.equal(secondTab.ack.moved, true);
+    assert.equal(secondTab.ack.self.pid, alice.ack.self.pid, 'same person');
+    assert.equal(secondTab.ack.room.hostPid, alice.ack.self.pid, 'still the host');
+    assert.deepEqual(await replaced, { moved: true });
+    const seen = await resumedForBob;
+    assert.equal(seen.participant.pid, alice.ack.self.pid);
+    assert.equal(seen.fresh, true, 'peers rebuild the connection to the new tab');
+    assert.equal(seen.participant.micOn, false, 'the new tab’s media state wins');
+
+    const snapshot = await emitAck(bob.socket, 'sync', {});
+    assert.equal(snapshot.room.participants.length, 2, 'no duplicate Alice');
+  });
+
+  test('the same browser gets its seat back even when the meeting is locked or full, and a new name sticks', async () => {
+    const { url } = await server({ MAX_ROOM_SIZE: '2' });
+    const device = clientId();
+    const host = await join(url, { name: 'Host', clientId: device });
+    const guest = await join(url, { name: 'Guest' });
+    track(host.socket, guest.socket);
+    await emitAck(host.socket, 'host-action', { action: 'lock' });
+
+    const renamed = waitFor(guest.socket, 'peer-resumed');
+    const again = await join(url, { name: 'Host (laptop)', clientId: device });
+    track(again.socket);
+    assert.equal(again.ack.ok, true, 'not sent to the waiting room, not refused as full');
+    assert.equal((await renamed).participant.name, 'Host (laptop)');
+
+    const stranger = await join(url, { name: 'Stranger' });
+    track(stranger.socket);
+    assert.notEqual(stranger.ack.self?.pid, host.ack.self.pid, 'a different browser is a different person');
+  });
+
+  test('the lobby learns this browser is already in the meeting, via a header only', async () => {
+    const { url } = await server();
+    const device = clientId();
+    const alice = await join(url, { name: 'Alice', roomId: 'abc-defg-hij', clientId: device });
+    track(alice.socket);
+    const ask = async (headers) => (await fetch(`${url}/api/room/abc-defg-hij`, { headers })).json();
+    assert.equal((await ask({ 'x-peerly-client': device })).here, true);
+    assert.equal((await ask({ 'x-peerly-client': clientId() })).here, false);
+    assert.equal((await ask({})).here, false);
+  });
+
   test('after a server restart everyone resumes into a rebuilt room and the real host gets the role back', async () => {
     const env = { MAX_ROOM_SIZE: '4' };
     const first = await startServer(env);

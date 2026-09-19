@@ -1,7 +1,7 @@
 // Pre-join screen: camera preview, device pickers, and the join button.
 
 import { $, h, clear, setIcon, toast, pluralize } from './ui.js';
-import { getName, setName } from './session.js';
+import { getName, setName, getClientId } from './session.js';
 
 function fillDevices(select, devices, { current, label }) {
   clear(select);
@@ -91,23 +91,26 @@ export class Lobby {
 
   updateJoinButton() {
     const hasName = this.nameInput.value.trim().length > 0;
-    const full = Boolean(this.roomInfo && this.roomInfo.full);
+    // Already in the meeting from another tab: joining just moves the seat here.
+    const full = Boolean(this.roomInfo && this.roomInfo.full) && !this.here;
     this.joinBtn.disabled = !hasName || full || this.busy;
-    this.joinBtn.textContent = this.busy ? 'Joining…' : this.locked ? 'Ask to join' : 'Join now';
+    this.joinBtn.textContent = this.busy ? 'Joining…' : this.here ? 'Join here' : this.locked ? 'Ask to join' : 'Join now';
   }
 
   async pollRoom() {
     try {
-      const response = await fetch(`/api/room/${this.roomId}`);
+      const response = await fetch(`/api/room/${this.roomId}`, { headers: { 'x-peerly-client': getClientId() } });
       const info = await response.json();
       this.roomInfo = info;
+      this.here = Boolean(info.here);
       if (!info.valid) {
         this.occupancy.textContent = 'This meeting link isn’t valid.';
         this.joinBtn.disabled = true;
         return;
       }
       this.locked = Boolean(info.locked);
-      if (info.full) this.occupancy.textContent = `This meeting is full (${info.count} of ${info.max}).`;
+      if (this.here) this.occupancy.textContent = 'You’re already in this meeting in another tab or window. Joining here moves you over.';
+      else if (info.full) this.occupancy.textContent = `This meeting is full (${info.count} of ${info.max}).`;
       else if (info.locked) this.occupancy.textContent = info.count ? `${pluralize(info.count, 'person', 'people')} in the meeting. The host lets people in.` : 'The host lets people in.';
       else if (!info.count) this.occupancy.textContent = 'No one else is here yet.';
       else this.occupancy.textContent = `${pluralize(info.count, 'person is', 'people are')} already here.`;

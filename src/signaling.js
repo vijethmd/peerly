@@ -111,10 +111,11 @@ function createSignaling({ io, config, logger, registry, reports, ai, metrics, t
     return room.hostPid === pid && room.hostSince ? tokens.hostProof(room.id, pid, room.hostSince) : null;
   }
 
-  function joinAck(room, p, { resumed }) {
+  function joinAck(room, p, { resumed, moved = false }) {
     return {
       ok: true,
       resumed,
+      moved,
       rebuilt: room.rebuilt,
       self: { pid: p.pid, token: tokens.resumeToken(room.id, p.pid), hostProof: hostProofFor(room, p.pid) },
       room: room.snapshotFor(p.pid),
@@ -213,11 +214,11 @@ function createSignaling({ io, config, logger, registry, reports, ai, metrics, t
     log.info('participant joined', { roomId: room.id, pid, resumed, participants: room.participants.size });
   }
 
-  function resumeSeat(socket, room, p, { fresh, media, reply }) {
+  function resumeSeat(socket, room, p, { fresh, media, reply, moved = false }) {
     const previous = p.socketId && p.socketId !== socket.id ? io.sockets.sockets.get(p.socketId) : undefined;
     if (previous) {
       // Same seat opened from another tab or a zombie connection: newest wins.
-      previous.emit('session-replaced');
+      previous.emit('session-replaced', { moved });
       detachSocket(previous);
       previous.disconnect(true);
     }
@@ -235,10 +236,10 @@ function createSignaling({ io, config, logger, registry, reports, ai, metrics, t
       p.recording = false;
     }
     bind(socket, room, p);
-    reply(joinAck(room, p, { resumed: true }));
+    reply(joinAck(room, p, { resumed: true, moved }));
     socket.to(room.id).emit('peer-resumed', { participant: Room.publicParticipant(p), fresh });
-    metrics.inc('peerly_joins_total', { kind: 'resume' });
-    log.info('participant resumed', { roomId: room.id, pid: p.pid, fresh });
+    metrics.inc('peerly_joins_total', { kind: moved ? 'moved' : 'resume' });
+    log.info('participant resumed', { roomId: room.id, pid: p.pid, fresh, moved });
   }
 
   function knock(socket, room, { name, reply, now }) {
@@ -456,6 +457,16 @@ function createSignaling({ io, config, logger, registry, reports, ai, metrics, t
           resumed: rebuilt || room.rebuilt,
           hostProof: payload.hostProof
         });
+      }
+
+      // One seat per browser: clientId lives in localStorage, so every tab and
+      // window of a browser shares it. A second tab takes over this person's
+      // seat (same identity, host role, hand, transcript) instead of joining
+      // as a copy, even when the room is full or locked; the first tab is told.
+      const sameBrowser = room ? room.seatForClient(clientId) : null;
+      if (sameBrowser) {
+        if (sameBrowser.name !== name) room.rename(sameBrowser, name);
+        return resumeSeat(socket, room, sameBrowser, { fresh: true, media, reply, moved: true });
       }
 
       if (room && room.participants.size >= config.rooms.maxSize) return reply(fullError);
