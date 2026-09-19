@@ -591,7 +591,7 @@ function endCall({ reason, reportId, by, message }) {
     link.href = `/report/${reportId}`;
     $('#endedReportText').textContent =
       reason === 'ended' || reason === 'left'
-        ? 'AI notes and the transcript will appear here once everyone leaves.'
+        ? 'Notes and the transcript will appear here once everyone leaves.'
         : 'Your meeting notes will be here when the meeting ends.';
   }
   $('#ended').hidden = false;
@@ -627,7 +627,7 @@ $('#moreBtn').addEventListener('click', (event) => {
       icon: 'record',
       onSelect: () => recorder.toggle().then(updateControls)
     },
-    { label: 'Transcript and AI notes', icon: 'sparkles', hint: 'N', onSelect: () => togglePanel('notes') },
+    { label: 'Transcript and notes', icon: 'sparkles', hint: 'N', onSelect: () => togglePanel('notes') },
     {
       label: 'Data saver',
       icon: 'leaf',

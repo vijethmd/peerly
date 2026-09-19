@@ -17,11 +17,11 @@ Media goes directly between participants over WebRTC (end-to-end encrypted by DT
 - Local recording (saved to your downloads; everyone sees a REC badge)
 - Keyboard shortcuts (`?` lists them), data saver mode, screen wake lock, and a layout that works on phones
 
-**Captions, transcript and AI notes**
-- The host turns on the transcript, and everyone gets **live captions** with speaker names. Each person’s browser transcribes their own microphone (Chrome and Edge use their built-in speech service), so attribution is exact and Peerly’s server only receives text
-- **Catch me up**: an AI recap of the meeting so far, for late joiners or anyone who stepped away
-- **Meeting notes page** when the meeting ends: an AI summary, key points, decisions, action items with owners and due dates, open questions, a topic timeline, who spoke and for how long, the timeline, the full searchable transcript and the public chat. Download it as Markdown or print it. Private messages are never included
-- AI features use Claude (`claude-opus-5` with structured output). Without an API key everything else, including the transcript and notes page, still works
+**Captions, transcript and meeting notes**
+- The host turns on the transcript, and everyone gets **live captions** with speaker names. Each person’s browser transcribes their own microphone, so attribution is exact and Peerly’s server only receives text. In Chrome this runs **on the device** (the language pack downloads in the background the first time; audio never leaves the laptop). Other browsers use their built-in speech service
+- **Catch me up**: a recap of the meeting so far, for late joiners or anyone who stepped away
+- **Meeting notes page** when the meeting ends: a summary, key points, decisions, action items with owners and due dates, open questions, a topic timeline, who spoke and for how long, the timeline, the full searchable transcript and the public chat. Download it as Markdown or print it. Private messages are never included
+- **Notes are free by default.** Out of the box, Peerly writes them itself from the transcript (no AI service, no key, nothing leaves the server). Add a free [Groq](https://console.groq.com/keys) key and they’re written by an AI model instead (`openai/gpt-oss-120b`); if Groq is ever busy, the built-in notes stand in and can be retried. Claude and any OpenAI-compatible API (OpenRouter, Mistral, a local Ollama) also work
 
 **Host controls**
 - Ask-to-join waiting room (admit or deny, or open the meeting to let everyone in)
@@ -43,7 +43,7 @@ npm install
 npm start          # http://localhost:4800
 ```
 
-To try AI notes locally, start it with a key: `ANTHROPIC_API_KEY=sk-ant-... npm start`.
+Meeting notes work without any key. For AI-written notes, start it with a free Groq key: `GROQ_API_KEY=gsk_... npm start`.
 
 Browsers only allow camera and mic on `localhost` or HTTPS. To test a call on one computer, open the room link in a normal window and a private window.
 
@@ -63,8 +63,8 @@ Then set these in the service’s **Environment** tab:
 
 | Variable | Why |
 |---|---|
-| `ANTHROPIC_API_KEY` | Turns on AI meeting notes and “catch me up” |
 | `SESSION_SECRET` | Any random string of 32+ characters (for example `openssl rand -hex 32`). Lets calls survive deploys. The blueprint generates it for you |
+| `GROQ_API_KEY` | Optional. AI-written meeting notes and “catch me up” on Groq’s free tier ([get a key](https://console.groq.com/keys)). Without it Peerly writes the notes itself |
 
 The free plan sleeps after about 15 minutes idle, so the first visit afterwards takes 30 to 60 seconds. Meeting state and notes live in memory, so they are lost if the instance restarts; calls reconnect on their own, but unfinished transcripts don’t survive.
 
@@ -72,7 +72,7 @@ The free plan sleeps after about 15 minutes idle, so the first visit afterwards 
 
 ```bash
 docker build -t peerly .
-docker run -p 4800:4800 -e SESSION_SECRET=$(openssl rand -hex 32) -e ANTHROPIC_API_KEY=... peerly
+docker run -p 4800:4800 -e SESSION_SECRET=$(openssl rand -hex 32) -e GROQ_API_KEY=... peerly
 ```
 
 Put it behind HTTPS (browsers require it for camera and mic), and set `TRUST_PROXY` to the number of proxies in front of it.
@@ -94,10 +94,15 @@ All settings are environment variables; `.env.example` lists them. Invalid value
 |---|---|---|
 | `PORT` | `4800` | HTTP port (Render sets it) |
 | `SESSION_SECRET` | random per process | Signs resume tokens so calls survive restarts |
-| `ANTHROPIC_API_KEY` | unset | Enables AI notes and recaps |
-| `AI_MODEL` | `claude-opus-5` | Claude model |
-| `AI_EFFORT` | `medium` | `low`, `medium`, `high`, `xhigh` or `max` |
-| `AI_MAX_REQUESTS_PER_HOUR` | `60` | Server-wide AI spend cap |
+| `GROQ_API_KEY` | unset | AI-written notes and recaps on Groq (free tier) |
+| `ANTHROPIC_API_KEY` | unset | AI-written notes with Claude instead |
+| `AI_PROVIDER` | `auto` | `auto` (Groq if its key is set, else Claude if its key is set, else built-in), `local`, `groq`, `anthropic` or `openai` (any OpenAI-compatible API; needs `AI_BASE_URL` and `AI_MODEL`, plus `AI_API_KEY` if it wants one) |
+| `AI_MODEL` | per provider | `openai/gpt-oss-120b` on Groq, `claude-opus-5` on Claude |
+| `AI_MAX_REQUEST_TOKENS` | `7500` on Groq | Long meetings are condensed to their most informative lines to fit; the default suits Groq’s free tier (8K tokens a minute) |
+| `AI_LOCAL_FALLBACK` | `true` | Use the built-in notes when the AI service fails |
+| `AI_EFFORT` | `medium` | Claude only: `low`, `medium`, `high`, `xhigh` or `max` |
+| `AI_MAX_REQUESTS_PER_HOUR` | `60` | Server-wide cap on AI requests |
+| `AI_ENABLED` | `true` | `false` turns meeting notes and recaps off |
 | `MAX_ROOM_SIZE` | `8` | People per meeting (2 to 16) |
 | `RECONNECT_GRACE_MS` | `30000` | How long a dropped participant keeps their seat |
 | `REPORT_TTL_HOURS` | `24` | How long meeting notes stay available |
@@ -117,7 +122,7 @@ Browser A ──┐                           ┌── Browser B
             └──────────┬────────────────┘
                        │ transcript + public chat, when the meeting ends
                        ▼
-                  Claude API ──▶ meeting notes page
+   built-in notes (default) or Groq / Claude ──▶ meeting notes page
 
 Browser A ═══ WebRTC audio/video (DTLS-SRTP, peer-to-peer) ═══ Browser B
 ```
@@ -139,7 +144,9 @@ src/
   signaling.js       Socket.IO events: join/resume, waiting room, chat, host controls
   rooms.js           in-memory meeting state
   reports.js         meeting notes lifecycle
-  ai.js              Claude integration (prompts, schemas, error handling)
+  ai.js              meeting notes: providers, prompts, schemas, fallback
+  ai-local.js        built-in notes (no AI service)
+  ai-openai.js       Groq and other OpenAI-compatible APIs
   config.js  logger.js  rateLimit.js  tokens.js  validate.js  ice.js  metrics.js
 public/
   room.html  report.html  index.html

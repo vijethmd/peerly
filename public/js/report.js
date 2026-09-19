@@ -1,4 +1,4 @@
-// Meeting report: renders the transcript, participation and AI notes for one
+// Meeting report: renders the transcript, participation and notes for one
 // finished meeting, and keeps polling while the AI is still writing.
 
 import { $, h, clear, toast, copyToClipboard, formatDuration } from './room/ui.js';
@@ -88,7 +88,7 @@ function render(report) {
   if (report.status === 'recording') {
     showState({
       title: 'This meeting is still going',
-      message: 'Notes, the transcript and AI summary appear here as soon as the meeting ends. You can keep this page open.'
+      message: 'Notes and the transcript appear here as soon as the meeting ends. You can keep this page open.'
     });
     return;
   }
@@ -148,6 +148,33 @@ function playEntrance(root) {
   entranceTimers.set(root, setTimeout(() => root.classList.remove('is-entering'), 2600));
 }
 
+const FALLBACK_REASONS = {
+  'rate-limited': 'The AI service was busy',
+  timeout: 'The AI service took too long',
+  network: 'The AI service couldn’t be reached',
+  unavailable: 'The AI service was down',
+  auth: 'The AI service rejected this server’s key',
+  budget: 'This server reached its hourly AI limit',
+  'too-large': 'This meeting was too long for the AI service',
+  truncated: 'The AI’s answer was cut short',
+  'invalid-output': 'The AI’s answer couldn’t be read',
+  refusal: 'The AI declined to summarize this meeting'
+};
+
+function retryButton(label) {
+  return h('button', {
+    class: 'mini-btn',
+    type: 'button',
+    text: label,
+    onClick: async (event) => {
+      event.currentTarget.disabled = true;
+      const response = await fetch(`/api/report/${reportId}/retry`, { method: 'POST' });
+      if (response.ok) setTimeout(load, 1000);
+      else toast('Could not start the AI again right now.', { tone: 'error' });
+    }
+  });
+}
+
 function renderAiBanner(ai) {
   const banner = $('#aiBanner');
   clear(banner);
@@ -160,41 +187,44 @@ function renderAiBanner(ai) {
       h('div', { class: 'spinner' }),
       h('div', { class: 'report-banner-body' },
         h('strong', { text: 'Writing your meeting notes' }),
-        'The AI is reading the transcript. This page updates on its own.')
+        'Reading the transcript. This page updates on its own.')
     );
     return;
   }
   if (ai.status === 'failed') {
     banner.classList.add('report-banner-error');
-    const body = h('div', { class: 'report-banner-body' }, h('strong', { text: 'AI notes couldn’t be generated' }), ai.error || '');
+    const body = h('div', { class: 'report-banner-body' }, h('strong', { text: 'Notes couldn’t be generated' }), ai.error || '');
     banner.append(body);
-    if (ai.retryable) {
-      banner.append(
-        h('button', {
-          class: 'mini-btn',
-          type: 'button',
-          text: 'Try again',
-          onClick: async (event) => {
-            event.currentTarget.disabled = true;
-            const response = await fetch(`/api/report/${reportId}/retry`, { method: 'POST' });
-            if (response.ok) setTimeout(load, 1000);
-            else toast('Could not start the AI again right now.', { tone: 'error' });
-          }
-        })
-      );
-    }
+    if (ai.retryable) banner.append(retryButton('Try again'));
+    return;
+  }
+  if (ai.status === 'ready' && ai.fallback) {
+    banner.append(
+      h('div', { class: 'report-banner-body' },
+        h('strong', { text: 'Automatic notes' }),
+        `${FALLBACK_REASONS[ai.fallback.code] || 'The AI service wasn’t available'}, so Peerly picked these out of the transcript itself.`)
+    );
+    if (ai.fallback.retryable) banner.append(retryButton('Try AI notes again'));
+    return;
+  }
+  if (ai.status === 'ready' && ai.kind === 'auto') {
+    banner.append(
+      h('div', { class: 'report-banner-body' },
+        h('strong', { text: 'Automatic notes' }),
+        'Peerly picked these out of the transcript without an AI service, so they can miss nuance. The full transcript is below.')
+    );
     return;
   }
   if (ai.status === 'disabled') {
     banner.append(
       h('div', { class: 'report-banner-body' },
-        h('strong', { text: 'AI notes are switched off on this server' }),
+        h('strong', { text: 'Notes are switched off on this server' }),
         'The full transcript and meeting statistics are below.')
     );
     return;
   }
   if (ai.status === 'skipped') {
-    banner.append(h('div', { class: 'report-banner-body' }, h('strong', { text: 'No AI summary' }), ai.error || ''));
+    banner.append(h('div', { class: 'report-banner-body' }, h('strong', { text: 'No summary' }), ai.error || ''));
     return;
   }
   banner.hidden = true;

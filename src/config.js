@@ -56,6 +56,48 @@ function readers(env) {
   };
 }
 
+const AI_PROVIDERS = ['auto', 'local', 'groq', 'openai', 'anthropic'];
+const DEFAULT_MODELS = { local: 'peerly-auto', groq: 'openai/gpt-oss-120b', anthropic: 'claude-opus-5' };
+const GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
+
+/**
+ * Meeting notes work out of the box with Peerly's own notes ("local": free,
+ * no key, nothing leaves the server). A GROQ_API_KEY (free tier) switches to
+ * AI-written notes; ANTHROPIC_API_KEY to Claude; AI_BASE_URL to any other
+ * OpenAI-compatible API. AI_PROVIDER picks one explicitly.
+ */
+function aiConfig(r) {
+  const groqKey = r.str('GROQ_API_KEY');
+  const genericKey = r.str('AI_API_KEY');
+  const hasAnthropicCredentials = Boolean(r.str('ANTHROPIC_API_KEY') || r.str('ANTHROPIC_AUTH_TOKEN'));
+  const enabled = r.bool('AI_ENABLED', true);
+  const requested = r.oneOf('AI_PROVIDER', 'auto', AI_PROVIDERS);
+  const auto = groqKey ? 'groq' : hasAnthropicCredentials ? 'anthropic' : 'local';
+  const provider = !enabled ? 'off' : requested === 'auto' ? auto : requested;
+
+  if (provider === 'groq' && !(groqKey || genericKey)) throw new ConfigError('AI_PROVIDER=groq needs GROQ_API_KEY');
+  if (provider === 'anthropic' && !hasAnthropicCredentials) throw new ConfigError('AI_PROVIDER=anthropic needs ANTHROPIC_API_KEY');
+  if (provider === 'openai' && !r.str('AI_BASE_URL')) throw new ConfigError('AI_PROVIDER=openai needs AI_BASE_URL');
+  const model = provider === 'local' ? DEFAULT_MODELS.local : r.str('AI_MODEL', DEFAULT_MODELS[provider]);
+  if (provider === 'openai' && !model) throw new ConfigError('AI_PROVIDER=openai needs AI_MODEL');
+
+  return {
+    enabled: provider !== 'off',
+    provider,
+    model: model || null,
+    baseUrl: provider === 'groq' ? r.str('AI_BASE_URL', GROQ_BASE_URL) : r.str('AI_BASE_URL') || null,
+    apiKey: provider === 'groq' ? groqKey || genericKey : provider === 'openai' ? genericKey || null : null,
+    effort: r.oneOf('AI_EFFORT', 'medium', ['low', 'medium', 'high', 'xhigh', 'max']),
+    reasoningEffort: r.oneOf('AI_REASONING_EFFORT', 'low', ['low', 'medium', 'high']),
+    structuredOutput: r.oneOf('AI_STRUCTURED_OUTPUT', 'auto', ['auto', 'strict', 'json']),
+    // Groq's free tier allows 8K tokens per minute for gpt-oss-120b.
+    maxRequestTokens: r.int('AI_MAX_REQUEST_TOKENS', provider === 'groq' ? 7500 : 200000, 2000, 2000000),
+    maxRequestsPerHour: r.int('AI_MAX_REQUESTS_PER_HOUR', 60, 1, 1000000),
+    timeoutMs: r.int('AI_TIMEOUT_MS', 240000, 10000, 1800000),
+    localFallback: r.bool('AI_LOCAL_FALLBACK', true)
+  };
+}
+
 /**
  * TRUST_PROXY is either a hop count (use the Nth address from the right of
  * X-Forwarded-For) or "true" (use the leftmost address). Render rewrites
@@ -109,7 +151,7 @@ function loadConfig(env = process.env) {
     throw new ConfigError('FORCE_RELAY requires a TURN server (TURN_URL)');
   }
 
-  const hasAnthropicCredentials = Boolean(r.str('ANTHROPIC_API_KEY') || r.str('ANTHROPIC_AUTH_TOKEN'));
+  const ai = aiConfig(r);
 
   return deepFreeze({
     nodeEnv,
@@ -146,13 +188,7 @@ function loadConfig(env = process.env) {
       turnTtlSeconds: r.int('TURN_TTL_SECONDS', 43200, 300, 604800),
       forceRelay
     },
-    ai: {
-      enabled: r.bool('AI_ENABLED', hasAnthropicCredentials),
-      model: r.str('AI_MODEL', 'claude-opus-5'),
-      effort: r.oneOf('AI_EFFORT', 'medium', ['low', 'medium', 'high', 'xhigh', 'max']),
-      maxRequestsPerHour: r.int('AI_MAX_REQUESTS_PER_HOUR', 60, 1, 1000000),
-      timeoutMs: r.int('AI_TIMEOUT_MS', 240000, 10000, 1800000)
-    },
+    ai,
     reports: {
       ttlMs: r.int('REPORT_TTL_HOURS', 24, 1, 720) * 60 * 60 * 1000,
       max: r.int('MAX_REPORTS', 500, 1, 100000)

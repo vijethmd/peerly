@@ -15,8 +15,9 @@ services:
       # Lets calls resume across deploys and restarts. Render generates it once.
       - key: SESSION_SECRET
         generateValue: true
-      # Turns on AI meeting notes and "catch me up". Set it in the dashboard.
-      - key: ANTHROPIC_API_KEY
+      # Optional: AI-written meeting notes on Groq's free tier
+      # (https://console.groq.com/keys). Without it Peerly writes the notes itself.
+      - key: GROQ_API_KEY
         sync: false
       # Optional TURN relay for strict NATs - see README "TURN server".
       # - key: TURN_URL

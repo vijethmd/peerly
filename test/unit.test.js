@@ -16,8 +16,8 @@ describe('config', () => {
     const config = loadConfig({});
     assert.equal(config.port, 4800);
     assert.equal(config.rooms.maxSize, 8);
-    assert.equal(config.ai.enabled, false);
-    assert.equal(config.ai.model, 'claude-opus-5');
+    assert.equal(config.ai.enabled, true);
+    assert.equal(config.ai.provider, 'local', 'free built-in notes without any key');
     assert.equal(config.sessionSecretIsEphemeral, true);
     assert.ok(Object.isFrozen(config.rooms));
   });
@@ -31,9 +31,19 @@ describe('config', () => {
     assert.throws(() => loadConfig({ TRUST_PROXY: 'maybe' }), /TRUST_PROXY/);
   });
 
-  test('turns AI on when an API key is present', () => {
-    assert.equal(loadConfig({ ANTHROPIC_API_KEY: 'sk-test' }).ai.enabled, true);
-    assert.equal(loadConfig({ ANTHROPIC_API_KEY: 'sk-test', AI_ENABLED: 'false' }).ai.enabled, false);
+  test('picks the notes provider from the keys that are set', () => {
+    const groq = loadConfig({ GROQ_API_KEY: 'gsk_test' }).ai;
+    assert.deepEqual(
+      [groq.provider, groq.model, groq.baseUrl, groq.apiKey, groq.maxRequestTokens],
+      ['groq', 'openai/gpt-oss-120b', 'https://api.groq.com/openai/v1', 'gsk_test', 7500]
+    );
+    const claude = loadConfig({ ANTHROPIC_API_KEY: 'sk-test' }).ai;
+    assert.deepEqual([claude.provider, claude.model], ['anthropic', 'claude-opus-5']);
+    assert.equal(loadConfig({ ANTHROPIC_API_KEY: 'sk-test', GROQ_API_KEY: 'gsk_test' }).ai.provider, 'groq', 'the free one wins');
+    assert.equal(loadConfig({ ANTHROPIC_API_KEY: 'sk-test', GROQ_API_KEY: 'gsk_test', AI_PROVIDER: 'anthropic' }).ai.provider, 'anthropic');
+    assert.equal(loadConfig({ GROQ_API_KEY: 'gsk_test', AI_PROVIDER: 'local' }).ai.provider, 'local');
+    const off = loadConfig({ GROQ_API_KEY: 'gsk_test', AI_ENABLED: 'false' }).ai;
+    assert.deepEqual([off.enabled, off.provider], [false, 'off']);
   });
 
   test('fails fast on invalid values', () => {
@@ -41,6 +51,10 @@ describe('config', () => {
     assert.throws(() => loadConfig({ MAX_ROOM_SIZE: '100' }), /MAX_ROOM_SIZE must be between/);
     assert.throws(() => loadConfig({ SESSION_SECRET: 'short' }), /at least 32/);
     assert.throws(() => loadConfig({ AI_EFFORT: 'extreme' }), /AI_EFFORT must be one of/);
+    assert.throws(() => loadConfig({ AI_PROVIDER: 'gemini' }), /AI_PROVIDER must be one of/);
+    assert.throws(() => loadConfig({ AI_PROVIDER: 'groq' }), /GROQ_API_KEY/);
+    assert.throws(() => loadConfig({ AI_PROVIDER: 'openai' }), /AI_BASE_URL/);
+    assert.throws(() => loadConfig({ AI_PROVIDER: 'anthropic' }), /ANTHROPIC_API_KEY/);
     assert.throws(() => loadConfig({ TURN_URL: 'turn:x' }), /TURN_SECRET/);
     assert.throws(() => loadConfig({ FORCE_RELAY: 'true' }), /requires a TURN server/);
   });

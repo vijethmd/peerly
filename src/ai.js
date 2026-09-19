@@ -2,6 +2,8 @@
 
 const Anthropic = require('@anthropic-ai/sdk');
 const { SlidingWindowCounter } = require('./rateLimit');
+const { OpenAiCompatibleClient, mapHttpError, estimateTokens } = require('./ai-openai');
+const { LOCAL_MODEL, localReport, localRecap, segmentScores } = require('./ai-local');
 
 // Recaps only need recent context; keep the prompt bounded on long meetings.
 const RECAP_MAX_TRANSCRIPT_CHARS = 120000;
@@ -103,11 +105,17 @@ function escapeData(value) {
 }
 
 // One line per speaker turn; consecutive segments by the same speaker within
-// 30 seconds are merged, which reads better and saves tokens.
+// 30 seconds are merged, which reads better and saves tokens. Condensed
+// transcripts carry { gap: true } markers where lines were left out.
 function formatTranscript(segments, startedAt) {
   const turns = [];
   let turn = null;
   for (const seg of segments) {
+    if (seg.gap) {
+      turns.push({ gap: true });
+      turn = null;
+      continue;
+    }
     if (turn && turn.pid === seg.pid && seg.ts - turn.lastTs <= 30000) {
       turn.text += ` ${seg.text}`;
       turn.lastTs = seg.ts;
@@ -116,7 +124,7 @@ function formatTranscript(segments, startedAt) {
       turns.push(turn);
     }
   }
-  return turns.map((t) => `[${formatOffset(t.ts, startedAt)}] ${escapeData(t.name)}: ${escapeData(t.text)}`).join('\n');
+  return turns.map((t) => (t.gap ? '[…]' : `[${formatOffset(t.ts, startedAt)}] ${escapeData(t.name)}: ${escapeData(t.text)}`)).join('\n');
 }
 
 function formatChat(messages, startedAt) {
@@ -145,6 +153,9 @@ function formatMeeting(meeting, endedAt, { live = false } = {}) {
   ];
   if (meeting.language) lines.push(`Speech recognition language: ${meeting.language}`);
   if (meeting.transcriptTruncated) lines.push('Note: the transcript hit its size limit, so the end of the meeting is missing.');
+  if (meeting.transcriptCondensed) {
+    lines.push('Note: the transcript was shortened to its most informative lines to fit the AI service’s limits. […] marks left-out parts.');
+  }
   return lines.join('\n');
 }
 
@@ -170,11 +181,11 @@ ${formatChat(chat, meeting.startedAt) || '(no public chat messages)'}
 Write the meeting notes.`;
 }
 
-function buildRecapPrompt(input) {
+function buildRecapPrompt(input, { maxChars = RECAP_MAX_TRANSCRIPT_CHARS } = {}) {
   const { meeting, participants, transcript, chat } = input;
   let chars = 0;
   let start = transcript.length;
-  while (start > 0 && chars + transcript[start - 1].text.length <= RECAP_MAX_TRANSCRIPT_CHARS) {
+  while (start > 0 && chars + transcript[start - 1].text.length <= maxChars) {
     start -= 1;
     chars += transcript[start].text.length;
   }
@@ -198,6 +209,69 @@ ${formatChat(chat.filter((m) => !recent.length || m.ts >= recent[0].ts), meeting
 
 Help me catch up on this meeting.`;
   return { prompt, partial };
+}
+
+// ------------------------------------------------ fitting smaller models
+
+// Keeps the most informative transcript lines (as ranked by the local
+// analysis) that fit the token budget, in their original order.
+function condenseTranscript(segments, scores, budget, startedAt) {
+  const cost = segments.map((s) => estimateTokens(`[${formatOffset(s.ts, startedAt)}] ${s.name}: ${s.text}`) + 2);
+  const order = segments.map((_, i) => i).sort((a, b) => (scores[b] || 0) - (scores[a] || 0) || a - b);
+  const keep = new Set();
+  let used = 0;
+  for (const i of order) {
+    if (used + cost[i] > budget) continue;
+    keep.add(i);
+    used += cost[i];
+  }
+  const out = [];
+  let skipped = false;
+  segments.forEach((seg, i) => {
+    if (!keep.has(i)) {
+      skipped = true;
+      return;
+    }
+    if (skipped) out.push({ gap: true });
+    skipped = false;
+    out.push(seg);
+  });
+  if (skipped) out.push({ gap: true });
+  return out;
+}
+
+function recentChat(chat, budget, startedAt) {
+  const out = [];
+  let used = 0;
+  for (let i = chat.length - 1; i >= 0; i--) {
+    const cost = estimateTokens(`[${formatOffset(chat[i].ts, startedAt)}] ${chat[i].name}: ${chat[i].text}`) + 2;
+    if (used + cost > budget) break;
+    used += cost;
+    out.unshift(chat[i]);
+  }
+  return out;
+}
+
+/** The report prompt, shortened when needed to stay within `maxTokens`. */
+function buildReportPromptWithin(input, maxTokens) {
+  const full = buildReportPrompt(input);
+  if (estimateTokens(full) <= maxTokens) return { prompt: full, condensed: false };
+  const chat = recentChat(input.chat, Math.floor(maxTokens * 0.15), input.meeting.startedAt);
+  const meeting = { ...input.meeting, transcriptCondensed: true };
+  const overhead = estimateTokens(buildReportPrompt({ ...input, meeting, chat, transcript: [] })) + 16;
+  const transcript = condenseTranscript(input.transcript, segmentScores(input), Math.max(200, maxTokens - overhead), input.meeting.startedAt);
+  return { prompt: buildReportPrompt({ ...input, meeting, chat, transcript }), condensed: true };
+}
+
+/** The recap prompt with as much recent context as fits `maxTokens`. */
+function buildRecapPromptWithin(input, maxTokens) {
+  let maxChars = Math.min(RECAP_MAX_TRANSCRIPT_CHARS, Math.max(1500, Math.floor(maxTokens * 3.4)));
+  let built = buildRecapPrompt(input, { maxChars });
+  while (estimateTokens(built.prompt) > maxTokens && maxChars > 1500) {
+    maxChars = Math.floor(maxChars * 0.7);
+    built = buildRecapPrompt(input, { maxChars });
+  }
+  return built;
 }
 
 const cleanString = (value, max) => (typeof value === 'string' ? value.trim().slice(0, max) : '');
@@ -264,16 +338,43 @@ function mapError(err) {
   return { code: 'internal', retryable: true, error: 'Something went wrong while generating notes.' };
 }
 
+const DISABLED = { ok: false, code: 'disabled', retryable: false, error: 'AI features are not set up on this server.' };
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Meeting notes and recaps from one of:
+ * - "local": Peerly's own notes (no AI service, free, nothing leaves the server)
+ * - "groq" / "openai": an OpenAI-compatible API, e.g. Groq's free tier
+ * - "anthropic": Claude
+ * When a remote provider fails, the local notes stand in (localFallback).
+ */
 class AiService {
-  constructor({ config, logger, metrics, client = null }) {
-    this.enabled = Boolean(config.enabled);
-    this.model = config.model;
+  constructor({ config, logger, metrics, client = null, fetchImpl = globalThis.fetch }) {
+    this.provider = config.enabled === false ? 'off' : config.provider || 'anthropic';
+    this.enabled = this.provider !== 'off';
+    // Whether the notes are written by an AI model or picked out automatically.
+    this.kind = this.provider === 'local' ? 'auto' : 'ai';
+    this.model = this.provider === 'local' ? LOCAL_MODEL : config.model;
     this.effort = config.effort;
     this.timeoutMs = config.timeoutMs;
+    this.localFallback = Boolean(config.localFallback) && this.provider !== 'local';
+    this.maxRequestTokens = config.maxRequestTokens || 200000;
     this.log = logger.child({ component: 'ai' });
     this.metrics = metrics;
-    this.budget = new SlidingWindowCounter(config.maxRequestsPerHour, 60 * 60 * 1000);
+    this.budget = new SlidingWindowCounter(config.maxRequestsPerHour || 60, 60 * 60 * 1000);
     this.client = client;
+    this.chat =
+      this.provider === 'groq' || this.provider === 'openai'
+        ? new OpenAiCompatibleClient({
+            provider: this.provider,
+            baseUrl: config.baseUrl,
+            apiKey: config.apiKey,
+            model: config.model,
+            reasoningEffort: config.reasoningEffort,
+            structuredOutput: config.structuredOutput,
+            fetchImpl
+          })
+        : null;
   }
 
   getClient() {
@@ -285,33 +386,138 @@ class AiService {
   }
 
   async generateReport(input) {
-    return this.run('report', {
-      system: REPORT_SYSTEM,
-      prompt: buildReportPrompt(input),
-      schema: REPORT_SCHEMA,
-      maxTokens: 16000,
-      effort: this.effort,
-      normalize: normalizeReport
-    });
+    if (!this.enabled) return DISABLED;
+    if (this.provider === 'local') return this.runLocal('report', input);
+    const result = this.chat
+      ? await this.runChat('report', input)
+      : await this.run('report', {
+          system: REPORT_SYSTEM,
+          prompt: buildReportPrompt(input),
+          schema: REPORT_SCHEMA,
+          maxTokens: 16000,
+          effort: this.effort,
+          normalize: normalizeReport
+        });
+    return this.withFallback('report', input, result);
   }
 
   async catchUp(input) {
-    const { prompt, partial } = buildRecapPrompt(input);
-    const result = await this.run('recap', {
-      system: RECAP_SYSTEM,
-      prompt,
-      schema: RECAP_SCHEMA,
-      maxTokens: 8000,
-      effort: 'low',
-      normalize: normalizeRecap
-    });
-    return result.ok ? { ...result, partial } : result;
+    if (!this.enabled) return DISABLED;
+    if (this.provider === 'local') return this.runLocal('recap', input);
+    let result;
+    if (this.chat) {
+      result = await this.runChat('recap', input);
+    } else {
+      const { prompt, partial } = buildRecapPrompt(input);
+      result = await this.run('recap', {
+        system: RECAP_SYSTEM,
+        prompt,
+        schema: RECAP_SCHEMA,
+        maxTokens: 8000,
+        effort: 'low',
+        normalize: normalizeRecap
+      });
+      if (result.ok) result = { ...result, partial };
+    }
+    return this.withFallback('recap', input, result);
+  }
+
+  withFallback(kind, input, result) {
+    if (result.ok || !this.localFallback) return result;
+    const local = this.runLocal(kind, input);
+    if (!local.ok) return result;
+    this.log.info('using local notes instead', { kind, code: result.code });
+    return { ...local, fallback: { code: result.code, error: result.error, retryable: Boolean(result.retryable) } };
+  }
+
+  runLocal(kind, input) {
+    const started = Date.now();
+    try {
+      const data = kind === 'report' ? normalizeReport(localReport(input)) : normalizeRecap(localRecap(input));
+      this.metrics.inc('peerly_ai_requests_total', { kind, outcome: 'local' });
+      this.log.info('local notes generated', { kind, ms: Date.now() - started });
+      return { ok: true, data, model: LOCAL_MODEL, kind: 'auto', ...(kind === 'recap' ? { partial: false } : {}) };
+    } catch (err) {
+      this.log.error('local notes failed', { kind, err });
+      return { ok: false, code: 'internal', retryable: false, error: 'Something went wrong while generating notes.' };
+    }
+  }
+
+  // OpenAI-compatible APIs (Groq by default). Free tiers cap tokens per
+  // minute, so prompts are fitted to maxRequestTokens up front, shrunk further
+  // if the API still says the request is too large, and rate limits are
+  // waited out when the wait is short.
+  async runChat(kind, input) {
+    if (!this.budget.tryHit()) {
+      this.metrics.inc('peerly_ai_requests_total', { kind, outcome: 'budget' });
+      return { ok: false, code: 'budget', retryable: true, error: 'The AI usage limit for this hour was reached. Please try again later.' };
+    }
+    const report = kind === 'report';
+    const system = report ? REPORT_SYSTEM : RECAP_SYSTEM;
+    const schema = report ? REPORT_SCHEMA : RECAP_SCHEMA;
+    const maxTokens = report ? 3000 : 1500;
+    const fixedTokens = estimateTokens(system + this.chat.schemaInstructions(schema) + JSON.stringify(schema)) + maxTokens + 150;
+    const started = Date.now();
+    const deadline = started + this.timeoutMs;
+    let tokenBudget = this.maxRequestTokens;
+
+    for (let attempt = 1; ; attempt++) {
+      const room = Math.max(600, tokenBudget - fixedTokens);
+      const built = report ? buildReportPromptWithin(input, room) : buildRecapPromptWithin(input, room);
+      try {
+        const response = await this.chat.complete({
+          system,
+          prompt: built.prompt,
+          schema,
+          schemaName: report ? 'meeting_notes' : 'meeting_recap',
+          maxTokens,
+          signal: AbortSignal.timeout(Math.max(1000, deadline - Date.now()))
+        });
+        const ms = Date.now() - started;
+        if (response.refusal || response.finishReason === 'content_filter') {
+          this.log.warn('ai request refused', { kind, ms });
+          this.metrics.inc('peerly_ai_requests_total', { kind, outcome: 'refusal' });
+          return { ok: false, code: 'refusal', retryable: false, error: 'The AI declined to summarize this meeting.' };
+        }
+        if (response.finishReason === 'length') {
+          this.log.warn('ai response truncated', { kind, ms });
+          this.metrics.inc('peerly_ai_requests_total', { kind, outcome: 'truncated' });
+          return { ok: false, code: 'truncated', retryable: true, error: 'The AI response was cut off before it finished.' };
+        }
+        const data = (report ? normalizeReport : normalizeRecap)(JSON.parse(response.content));
+        this.log.info('ai request completed', {
+          kind,
+          ms,
+          provider: this.provider,
+          model: response.model,
+          condensed: Boolean(built.condensed),
+          inputTokens: response.usage?.prompt_tokens,
+          outputTokens: response.usage?.completion_tokens
+        });
+        this.metrics.inc('peerly_ai_requests_total', { kind, outcome: 'ok' });
+        return { ok: true, data, model: response.model, kind: 'ai', ...(report ? {} : { partial: Boolean(built.partial) }) };
+      } catch (err) {
+        const mapped = mapHttpError(err);
+        if (mapped.code === 'too-large' && attempt < 3) {
+          tokenBudget = Math.floor(tokenBudget * 0.6);
+          continue;
+        }
+        const wait = err.retryAfterMs ?? (mapped.code === 'unavailable' ? 1500 : mapped.code === 'rate-limited' ? 5000 : null);
+        const maxWait = report ? 30000 : 3000;
+        if ((mapped.code === 'rate-limited' || mapped.code === 'unavailable') && attempt < 3 && wait !== null && wait <= maxWait && Date.now() + wait < deadline - 5000) {
+          await sleep(wait);
+          continue;
+        }
+        const fields = { kind, ms: Date.now() - started, provider: this.provider, code: mapped.code, status: err.status };
+        if (mapped.retryable) this.log.warn('ai request failed', fields);
+        else this.log.error('ai request failed', fields);
+        this.metrics.inc('peerly_ai_requests_total', { kind, outcome: mapped.code });
+        return { ok: false, ...mapped };
+      }
+    }
   }
 
   async run(kind, { system, prompt, schema, maxTokens, effort, normalize }) {
-    if (!this.enabled) {
-      return { ok: false, code: 'disabled', retryable: false, error: 'AI features are not set up on this server.' };
-    }
     if (!this.budget.tryHit()) {
       this.metrics.inc('peerly_ai_requests_total', { kind, outcome: 'budget' });
       return { ok: false, code: 'budget', retryable: true, error: 'The AI usage limit for this hour was reached. Please try again later.' };
@@ -361,7 +567,7 @@ class AiService {
         outputTokens: message.usage?.output_tokens
       });
       this.metrics.inc('peerly_ai_requests_total', { kind, outcome: 'ok' });
-      return { ok: true, data, model: message.model };
+      return { ok: true, data, model: message.model, kind: 'ai' };
     } catch (err) {
       const mapped = mapError(err);
       const fields = { kind, ms: Date.now() - started, code: mapped.code, err };
@@ -379,6 +585,9 @@ module.exports = {
   RECAP_SCHEMA,
   buildReportPrompt,
   buildRecapPrompt,
+  buildReportPromptWithin,
+  buildRecapPromptWithin,
+  condenseTranscript,
   formatTranscript,
   formatOffset,
   escapeData,

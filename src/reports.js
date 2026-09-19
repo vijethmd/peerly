@@ -41,7 +41,10 @@ function reactionMoments(log) {
 
 function publicAi(ai) {
   const out = { status: ai.status };
-  if (ai.status === 'ready') Object.assign(out, { data: ai.data, model: ai.model, generatedAt: ai.generatedAt });
+  if (ai.status === 'ready') {
+    Object.assign(out, { data: ai.data, model: ai.model, kind: ai.kind || 'ai', generatedAt: ai.generatedAt });
+    if (ai.fallback) out.fallback = { code: ai.fallback.code, error: ai.fallback.error, retryable: Boolean(ai.fallback.retryable) };
+  }
   if (ai.status === 'failed' || ai.status === 'skipped') Object.assign(out, { error: ai.error, retryable: Boolean(ai.retryable) });
   return out;
 }
@@ -182,7 +185,7 @@ class ReportStore {
     if (this.reports.get(id) !== report) return; // expired or evicted meanwhile
     const now = Date.now();
     report.ai = result.ok
-      ? { status: 'ready', data: result.data, model: result.model, generatedAt: now }
+      ? { status: 'ready', data: result.data, model: result.model, kind: result.kind || 'ai', fallback: result.fallback || null, generatedAt: now }
       : { status: 'failed', code: result.code, error: result.error, retryable: Boolean(result.retryable), failedAt: now };
     report.updatedAt = now;
   }
@@ -190,7 +193,11 @@ class ReportStore {
   retry(id, now = Date.now()) {
     const report = this.get(id, now);
     if (!report) return { ok: false, status: 404, error: 'This report doesn’t exist or has expired.' };
-    if (report.ai.status !== 'failed' || !report.ai.retryable) {
+    // Failed notes can be retried, and so can stand-in local notes when the
+    // AI service was only temporarily unavailable.
+    const failed = report.ai.status === 'failed' && report.ai.retryable;
+    const standIn = report.ai.status === 'ready' && report.ai.fallback?.retryable;
+    if (!failed && !standIn) {
       return { ok: false, status: 409, error: 'These notes can’t be regenerated right now.' };
     }
     this.generate(id);

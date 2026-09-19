@@ -15,6 +15,8 @@ function clientFeatures(config, ai) {
   return {
     protocolVersion: PROTOCOL_VERSION,
     ai: ai.enabled,
+    // "ai" when an AI model writes the notes, "auto" for Peerly's own notes.
+    notes: ai.enabled ? ai.kind || 'ai' : null,
     maxRoomSize: config.rooms.maxSize,
     reconnectGraceMs: config.rooms.reconnectGraceMs,
     reactions: REACTIONS,

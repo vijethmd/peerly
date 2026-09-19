@@ -71,7 +71,7 @@ export class ChatPanel {
     this.select.disabled = !canDm;
     if (!canDm && this.select.value) this.select.value = '';
     this.notice.textContent = canDm
-      ? 'Messages stay in this meeting. Private messages are never included in AI notes.'
+      ? 'Messages stay in this meeting. Private messages are never included in the notes.'
       : 'The host turned off private messages. Everyone in the meeting sees what you send.';
     this.updatePlaceholder();
   }
