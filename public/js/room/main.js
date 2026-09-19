@@ -1,7 +1,7 @@
 // Composition root for the meeting page: creates the modules and wires them
 // to each other.
 
-import { $, toast, clearToasts, announce, setIcon, openMenu, openDialog, copyToClipboard, formatDuration } from './ui.js';
+import { $, toast, clearToasts, dismissToast, announce, setIcon, openMenu, openDialog, copyToClipboard, formatDuration } from './ui.js';
 import { installErrorReporting } from './telemetry.js';
 import { loadSession, prefs, rememberRoom } from './session.js';
 import { BackgroundProcessor } from './effects.js';
@@ -60,7 +60,8 @@ const people = new PeoplePanel({
     openPanel('chat');
     chat.setRecipient(pid);
   },
-  onPin: (pid) => stage.togglePin(`${pid}:camera`)
+  onPin: (pid) => stage.togglePin(`${pid}:camera`),
+  isPinned: (pid) => stage.pinnedKey === `${pid}:camera`
 });
 const reactions = new Reactions({ call, stage });
 const notes = new Notes({ call, onUnread: (count) => setBadge($('#notesBadge'), count) });
@@ -134,7 +135,10 @@ function openPanel(name) {
     panel.button.setAttribute('aria-expanded', String(active));
   }
   if (name === 'chat') chat.open();
-  if (name === 'notes') notes.markRead();
+  if (name === 'notes') {
+    notes.markRead();
+    notes.prepareSpeech();
+  }
   stage.layout();
 }
 
@@ -442,6 +446,22 @@ stage.on('menu', ({ pid, anchor }) => {
   if (participant) people.openMenu(anchor, participant);
 });
 stage.on('stop-presenting', () => call.stopShare());
+stage.on('pin-changed', ({ pid, source, pinned }) => {
+  if (!pinned) {
+    dismissToast('pin');
+    announce('Unpinned');
+    return;
+  }
+  const isSelf = pid === call.self.pid;
+  const name = call.participant(pid)?.name || 'Someone';
+  const what = source === 'screen' ? (isSelf ? 'Your presentation' : `${name}’s presentation`) : isSelf ? 'Your video' : name;
+  toast(`${what} is pinned for you. Others’ views don’t change.`, {
+    id: 'pin',
+    timeout: 3500,
+    actions: [{ label: 'Unpin', onSelect: () => stage.unpin() }]
+  });
+  announce(`${what} pinned`);
+});
 stage.on('autoplay-blocked', () =>
   showBanner('autoplay', 'Click to turn on sound for this meeting.', 'info', {
     label: 'Turn on sound',
@@ -463,6 +483,7 @@ audioMonitor.on('speaking', ({ id, speaking }) => {
   const pid = id === 'self' ? call.self.pid : id;
   if (pid) stage.setSpeaking(pid, speaking);
   if (id !== 'self') return;
+  notes.onSelfSpeaking(speaking && media.micOn);
   if (speaking && media.micOn) speakingSince = Date.now();
   else if (!speaking && speakingSince) {
     talkMs += Date.now() - speakingSince;

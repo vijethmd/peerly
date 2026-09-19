@@ -103,6 +103,11 @@ export class SpeechEngine {
     this.start();
   }
 
+  /** Starts downloading on-device recognition early (e.g. when the notes panel opens). */
+  prepare(lang = this.lang) {
+    if (canCheckOnDevice && !this.noDevice.has(lang)) this.pickMode(lang).catch(() => {});
+  }
+
   async start() {
     if (!speechSupported || this.recognition || this.starting) return;
     this.starting = true;

@@ -56,6 +56,7 @@ const PATHS = {
   check: '<path d="M20 6L9 17l-5-5"/>',
   lock: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
   pin: '<path d="M9 3h6l-1 7 3.2 3.4H6.8L10 10z"/><path d="M12 13.4V21"/>',
+  pinOff: '<path d="M9 3h6l-1 7 3.2 3.4H6.8L10 10z"/><path d="M12 13.4V21"/><path d="M3 3l18 18"/>',
   record: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/>',
   settings: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>',
   effects: '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="12" cy="10" r="3"/><path d="M6.5 20a5.5 5.5 0 0 1 11 0"/>',
@@ -193,6 +194,12 @@ export function toast(message, { tone = 'info', timeout = 4500, actions = [], id
   while (toastRoot.children.length > 4) toastRoot.firstElementChild.remove();
   if (timeout) timer = setTimeout(close, timeout);
   return { close, el };
+}
+
+/** Removes the toast shown with this id, if it's still up. */
+export function dismissToast(id) {
+  toastRoot ||= $('#toasts');
+  toastRoot?.querySelector(`[data-toast-id="${CSS.escape(id)}"]`)?.remove();
 }
 
 /** Drops every toast, e.g. join requests that no longer apply once the call is over. */
