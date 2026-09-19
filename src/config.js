@@ -99,6 +99,30 @@ function aiConfig(r) {
 }
 
 /**
+ * Who turns speech into text. "groq": browsers send short clips of each
+ * person's speech to the server, which transcribes them with Groq's Whisper
+ * (works on every browser and phone). "browser": each browser's own speech
+ * recognition (no server audio, but not every browser can do it). Auto picks
+ * Groq when GROQ_API_KEY is set.
+ */
+function transcriptionConfig(r) {
+  const groqKey = r.str('GROQ_API_KEY');
+  const requested = r.oneOf('TRANSCRIPTION', 'auto', ['auto', 'browser', 'groq']);
+  const provider = requested === 'auto' ? (groqKey ? 'groq' : 'browser') : requested;
+  if (provider === 'groq' && !groqKey) throw new ConfigError('TRANSCRIPTION=groq needs GROQ_API_KEY');
+  return {
+    enabled: provider === 'groq',
+    provider,
+    baseUrl: r.str('TRANSCRIBE_BASE_URL', GROQ_BASE_URL),
+    apiKey: provider === 'groq' ? groqKey : null,
+    model: r.str('TRANSCRIBE_MODEL', 'whisper-large-v3-turbo'),
+    // Groq's free tier allows 20 requests a minute for Whisper.
+    maxPerMinute: r.int('TRANSCRIBE_MAX_PER_MINUTE', 18, 1, 100000),
+    timeoutMs: r.int('TRANSCRIBE_TIMEOUT_MS', 30000, 5000, 300000)
+  };
+}
+
+/**
  * TRUST_PROXY is either a hop count (use the Nth address from the right of
  * X-Forwarded-For) or "true" (use the leftmost address). Render rewrites
  * X-Forwarded-For so the first entry is always the real client, so "true" is
@@ -152,6 +176,7 @@ function loadConfig(env = process.env) {
   }
 
   const ai = aiConfig(r);
+  const transcription = transcriptionConfig(r);
 
   return deepFreeze({
     nodeEnv,
@@ -189,6 +214,7 @@ function loadConfig(env = process.env) {
       forceRelay
     },
     ai,
+    transcription,
     reports: {
       ttlMs: r.int('REPORT_TTL_HOURS', 24, 1, 720) * 60 * 60 * 1000,
       max: r.int('MAX_REPORTS', 500, 1, 100000)

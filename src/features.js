@@ -17,6 +17,8 @@ function clientFeatures(config, ai) {
     ai: ai.enabled,
     // "ai" when an AI model writes the notes, "auto" for Peerly's own notes.
     notes: ai.enabled ? ai.kind || 'ai' : null,
+    // "server": browsers upload speech clips for Whisper; "browser": they transcribe themselves.
+    transcriber: config.transcription?.enabled ? 'server' : 'browser',
     maxRoomSize: config.rooms.maxSize,
     reconnectGraceMs: config.rooms.reconnectGraceMs,
     reactions: REACTIONS,

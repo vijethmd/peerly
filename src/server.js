@@ -6,6 +6,7 @@ const { loadConfig } = require('./config');
 const { createLogger } = require('./logger');
 const { Metrics } = require('./metrics');
 const { AiService } = require('./ai');
+const { Transcriber } = require('./transcriber');
 const { ReportStore } = require('./reports');
 const { RoomRegistry } = require('./rooms');
 const { createTokenService } = require('./tokens');
@@ -25,6 +26,7 @@ function createPeerly(options = {}) {
   const lifecycle = { shuttingDown: false, closing: null };
 
   const ai = options.ai || new AiService({ config: config.ai, logger, metrics });
+  const transcriber = options.transcriber || new Transcriber({ config: config.transcription, logger, metrics });
   const reports = new ReportStore({ config: config.reports, ai, logger, metrics });
   const registry = new RoomRegistry(config.rooms);
   const tokens = createTokenService(config.sessionSecret);
@@ -38,7 +40,8 @@ function createPeerly(options = {}) {
     ai,
     metrics,
     lifecycle,
-    onBeaconLeave: (body) => signaling.beaconLeave(body)
+    onBeaconLeave: (body) => signaling.beaconLeave(body),
+    onTranscribe: (meta, pcm) => signaling.transcribeClip(meta, pcm)
   });
 
   // The app must be attached before Socket.IO so Socket.IO can route its own
@@ -54,7 +57,7 @@ function createPeerly(options = {}) {
     connectTimeout: 20000,
     allowRequest: (req, callback) => callback(null, isOriginAllowed(req, config.allowedOrigins))
   });
-  signaling = createSignaling({ io, config, logger, registry, reports, ai, metrics, tokens, lifecycle });
+  signaling = createSignaling({ io, config, logger, registry, reports, ai, transcriber, metrics, tokens, lifecycle });
 
   metrics
     .counter('peerly_joins_total', 'Participants joining or resuming a meeting')

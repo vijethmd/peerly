@@ -149,7 +149,11 @@ class Room {
       return null;
     }
     const segment = { id: this.nextId(), pid, name, text, ts };
-    this.transcript.push(segment);
+    // Server transcription can finish after later lines: keep spoken order.
+    let at = this.transcript.length;
+    while (at > 0 && this.transcript[at - 1].ts > ts) at -= 1;
+    this.transcript.splice(at, 0, segment);
+    this.lastTranscriptId = segment.id;
     this.transcriptChars += text.length;
     const record = this.attendance.get(pid);
     if (record) {

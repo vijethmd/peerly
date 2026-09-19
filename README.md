@@ -18,7 +18,9 @@ Media goes directly between participants over WebRTC (end-to-end encrypted by DT
 - Keyboard shortcuts (`?` lists them), data saver mode, screen wake lock, and a layout that works on phones
 
 **Captions, transcript and meeting notes**
-- The host turns on the transcript, and everyone gets **live captions** with speaker names. Each person’s browser transcribes their own microphone, so attribution is exact and Peerly’s server only receives text. In Chrome this runs **on the device** (the language pack downloads in the background the first time; audio never leaves the laptop). Other browsers use their built-in speech service
+- The host turns on the transcript, and everyone gets **live captions** with speaker names. Attribution is exact because each person’s own microphone is transcribed separately
+- **With a Groq key, everyone is transcribed on any browser or phone:** each browser sends short clips of its person’s speech (cut at pauses, 16 kHz mono) to Peerly’s server, which turns them into text with Whisper (`whisper-large-v3-turbo`, Groq free tier). Clips are transcribed and dropped, never stored. Chrome’s own recognizer still shows instant captions while you talk
+- **Without a key,** each browser transcribes its own microphone and Peerly only receives text. In Chrome this runs on the device (the language pack downloads in the background the first time); other browsers use their built-in speech service, which not every browser or phone has
 - **Catch me up**: a recap of the meeting so far, for late joiners or anyone who stepped away
 - **Meeting notes page** when the meeting ends: a summary, key points, decisions, action items with owners and due dates, open questions, a topic timeline, who spoke and for how long, the timeline, the full searchable transcript and the public chat. Download it as Markdown or print it. Private messages are never included
 - **Notes are free by default.** Out of the box, Peerly writes them itself from the transcript (no AI service, no key, nothing leaves the server). Add a free [Groq](https://console.groq.com/keys) key and they’re written by an AI model instead (`openai/gpt-oss-120b`); if Groq is ever busy, the built-in notes stand in and can be retried. Claude and any OpenAI-compatible API (OpenRouter, Mistral, a local Ollama) also work
@@ -103,6 +105,9 @@ All settings are environment variables; `.env.example` lists them. Invalid value
 | `AI_EFFORT` | `medium` | Claude only: `low`, `medium`, `high`, `xhigh` or `max` |
 | `AI_MAX_REQUESTS_PER_HOUR` | `60` | Server-wide cap on AI requests |
 | `AI_ENABLED` | `true` | `false` turns meeting notes and recaps off |
+| `TRANSCRIPTION` | `auto` | `auto` (server transcription with Groq Whisper when `GROQ_API_KEY` is set, otherwise each browser transcribes itself), `groq` or `browser` |
+| `TRANSCRIBE_MODEL` | `whisper-large-v3-turbo` | Groq speech-to-text model |
+| `TRANSCRIBE_MAX_PER_MINUTE` | `18` | Speech clips sent to Groq per minute (free tier: 20); a backlog merges each speaker’s clips |
 | `MAX_ROOM_SIZE` | `8` | People per meeting (2 to 16) |
 | `RECONNECT_GRACE_MS` | `30000` | How long a dropped participant keeps their seat |
 | `REPORT_TTL_HOURS` | `24` | How long meeting notes stay available |
@@ -131,7 +136,7 @@ Browser A ═══ WebRTC audio/video (DTLS-SRTP, peer-to-peer) ═══ Brows
 - **Negotiation** follows the W3C “perfect negotiation” pattern. Each connection has a session id, so a reloaded page or a rebuilt connection cleanly replaces the old one, and simultaneous rebuilds converge on one
 - **Identity.** The server issues each participant an id and an HMAC-signed resume token (plus a signed host proof for the host). Tokens are stateless, which is what lets a freshly restarted server recognise people
 - **Server state** is in memory: rooms, the waiting room, chat history, transcripts and reports. Rooms disappear when the last person leaves
-- **Security.** Strict Content Security Policy (no inline scripts, WASM only for the segmentation model), HSTS, Permissions-Policy, WebSocket origin checks, per-IP and per-event rate limits, input sanitisation (including bidi-spoofing characters), bounded memory everywhere, and meeting-note links that are unguessable and kept out of logs. Transcript text is treated as untrusted when sent to the AI
+- **Security.** Strict Content Security Policy (no inline scripts, WASM only for the segmentation model), HSTS, Permissions-Policy, WebSocket origin checks, per-IP and per-event rate limits, input sanitisation (including bidi-spoofing characters), bounded memory everywhere, and meeting-note links that are unguessable and kept out of logs. Transcript text is treated as untrusted when sent to the AI. Speech clips for server transcription are accepted only with the speaker’s signed resume token (sent in headers), rate-limited per person, capped in length, and never written to disk
 - **Operations.** `/healthz` (liveness), `/readyz` (fails during shutdown), `/metrics` (Prometheus, opt-in), structured logs with request ids, client error reporting, and graceful shutdown that tells clients to reconnect
 
 ### Code layout
@@ -147,6 +152,7 @@ src/
   ai.js              meeting notes: providers, prompts, schemas, fallback
   ai-local.js        built-in notes (no AI service)
   ai-openai.js       Groq and other OpenAI-compatible APIs
+  transcriber.js     server-side speech-to-text (Groq Whisper): queue, merging, filters
   config.js  logger.js  rateLimit.js  tokens.js  validate.js  ice.js  metrics.js
 public/
   room.html  report.html  index.html
